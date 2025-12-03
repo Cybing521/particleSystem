@@ -1,0 +1,53 @@
+import * as THREE from 'three';
+import { ParticleSystem } from './scene/ParticleSystem.js';
+import { HandTracker } from './input/HandTracker.js';
+import { UIManager } from './ui/UIManager.js';
+import './style.css';
+
+const app = document.querySelector('#app');
+
+// Scene Setup
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xffffff);
+// Add some white fog for depth and "breathing" atmosphere
+scene.fog = new THREE.FogExp2(0xffffff, 0.02);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.z = 5;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+app.appendChild(renderer.domElement);
+
+// Particle System
+const particleSystem = new ParticleSystem(scene);
+
+// Hand Tracker
+const handTracker = new HandTracker();
+
+// UI Manager
+const uiManager = new UIManager(particleSystem);
+
+// Resize Handler
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Animation Loop
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const elapsedTime = clock.getElapsedTime();
+  const gestureState = handTracker.getGestureState();
+
+  particleSystem.update(elapsedTime, gestureState);
+
+  renderer.render(scene, camera);
+}
+
+animate();
