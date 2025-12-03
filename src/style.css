@@ -157,3 +157,26 @@ input[type="file"] {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
+
+.camera-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 20px;
+}
+
+.camera-btn .camera-icon {
+  font-size: 18px;
+}
+
+.camera-btn.active {
+  background: #4CAF50;
+  color: white;
+  border-color: #4CAF50;
+}
+
+.camera-btn.active:hover {
+  background: #45a049;
+}

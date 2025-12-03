@@ -1,6 +1,7 @@
 export class UIManager {
-    constructor(particleSystem) {
+    constructor(particleSystem, handTracker) {
         this.particleSystem = particleSystem;
+        this.handTracker = handTracker;
         this.container = document.getElementById('ui-container');
 
         this.init();
@@ -44,6 +45,13 @@ export class UIManager {
             </div>
 
             <div class="control-group">
+                <button id="camera-toggle-btn" class="camera-btn">
+                    <span class="camera-icon">📷</span>
+                    <span class="camera-text">Enable Camera</span>
+                </button>
+            </div>
+
+            <div class="control-group">
                 <button id="fullscreen-btn">Fullscreen</button>
             </div>
         `;
@@ -82,6 +90,30 @@ export class UIManager {
             }
         });
 
+        // Camera Toggle
+        const cameraBtn = this.container.querySelector('#camera-toggle-btn');
+        this.updateCameraButton();
+        
+        const toggleCamera = async () => {
+            if (this.handTracker.isCameraEnabled()) {
+                this.handTracker.disableCamera();
+            } else {
+                try {
+                    await this.handTracker.enableCamera();
+                } catch (err) {
+                    alert('无法访问摄像头。请确保已授予摄像头权限。');
+                    console.error('Camera error:', err);
+                }
+            }
+            this.updateCameraButton();
+        };
+        
+        // Mouse click toggle
+        cameraBtn.addEventListener('click', toggleCamera);
+        
+        // Gesture toggle: Set callback for hand tracker
+        this.handTracker.setToggleCallback(toggleCamera);
+
         // Fullscreen
         const fsBtn = this.container.querySelector('#fullscreen-btn');
         fsBtn.addEventListener('click', () => {
@@ -93,5 +125,21 @@ export class UIManager {
                 }
             }
         });
+    }
+
+    updateCameraButton() {
+        const cameraBtn = this.container.querySelector('#camera-toggle-btn');
+        const cameraText = cameraBtn.querySelector('.camera-text');
+        const cameraIcon = cameraBtn.querySelector('.camera-icon');
+        
+        if (this.handTracker.isCameraEnabled()) {
+            cameraText.textContent = 'Disable Camera';
+            cameraIcon.textContent = '📷';
+            cameraBtn.classList.add('active');
+        } else {
+            cameraText.textContent = 'Enable Camera';
+            cameraIcon.textContent = '📷';
+            cameraBtn.classList.remove('active');
+        }
     }
 }

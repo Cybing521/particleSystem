@@ -8,6 +8,14 @@ export class ParticleSystem {
         this.count = 5000; // Increased count for better visuals
         this.geometry = null;
         this.material = null;
+        
+        // Particle velocities for free diffusion
+        this.velocities = new Float32Array(this.count * 3);
+        
+        // Diffusion parameters
+        this.diffusionSpeed = 0.02; // Base speed of particle movement
+        this.attractionStrength = 0.001; // Strength of attraction to target shape
+        this.randomness = 0.005; // Random movement component
 
         this.init();
     }
@@ -32,7 +40,17 @@ export class ParticleSystem {
             positions[i] = this.initialPositions[i];
         }
 
+        // Initialize velocities with random directions
         for (let i = 0; i < this.count; i++) {
+            // Random velocity direction
+            const speed = this.diffusionSpeed * (0.5 + Math.random() * 0.5);
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            
+            this.velocities[i * 3] = speed * Math.sin(phi) * Math.cos(theta);
+            this.velocities[i * 3 + 1] = speed * Math.sin(phi) * Math.sin(theta);
+            this.velocities[i * 3 + 2] = speed * Math.cos(phi);
+            
             this.updateParticleColor(color, i);
             colors[i * 3] = color.r;
             colors[i * 3 + 1] = color.g;
@@ -100,6 +118,15 @@ export class ParticleSystem {
 
     setShape(shape) {
         this.calculateShapePositions(shape, this.targetPositions);
+        
+        // Add some initial velocity boost when shape changes for more dynamic effect
+        for (let i = 0; i < this.count; i++) {
+            const idx = i * 3;
+            const boost = 0.03;
+            this.velocities[idx] += (Math.random() - 0.5) * boost;
+            this.velocities[idx + 1] += (Math.random() - 0.5) * boost;
+            this.velocities[idx + 2] += (Math.random() - 0.5) * boost;
+        }
     }
 
     setColor(hexColor) {
@@ -160,16 +187,21 @@ export class ParticleSystem {
         });
     }
 
-    update(time, gestureState = 1.0, fingers = 0, handPos = { x: 0.5, y: 0.5 }) {
+    update(time, gestureState = 1.0, fingers = 0, handPos = { x: 0.5, y: 0.5 }, rotationZ = 0.0, rotationX = 0.0) {
         if (this.particles) {
             // Rotation based on hand position (0.5 is center)
-            // Map 0..1 to -PI..PI
-            const targetRotY = (handPos.x - 0.5) * Math.PI;
-            const targetRotX = (handPos.y - 0.5) * Math.PI;
+            // Map 0..1 to -PI..PI, increase sensitivity
+            const targetRotY = (handPos.x - 0.5) * Math.PI * 1.5;
+            const targetRotX = (handPos.y - 0.5) * Math.PI * 1.5;
+            
+            // Z-axis rotation based on hand tilt (left/right rotation)
+            // Map -1..1 to -PI..PI for more visible effect
+            const targetRotZ = rotationZ * Math.PI;
 
-            // Smooth rotation
-            this.particles.rotation.y += (targetRotY - this.particles.rotation.y) * 0.05;
-            this.particles.rotation.x += (targetRotX - this.particles.rotation.x) * 0.05;
+            // Smooth rotation with increased responsiveness
+            this.particles.rotation.y += (targetRotY - this.particles.rotation.y) * 0.1;
+            this.particles.rotation.x += (targetRotX - this.particles.rotation.x) * 0.1;
+            this.particles.rotation.z += (targetRotZ - this.particles.rotation.z) * 0.12;
 
             // Auto rotation if no hand
             if (gestureState > 0.95 && fingers === 0) {
@@ -188,19 +220,72 @@ export class ParticleSystem {
             const breath = Math.sin(time * 2.0) * 0.005;
             this.material.size = 0.03 + breath;
 
-            // Morphing logic
+            // Free diffusion with attraction to target shape
             const positions = this.geometry.attributes.position.array;
-            const lerpFactor = 0.05;
+            const deltaTime = 0.016; // Approximate frame time (60fps)
 
-            for (let i = 0; i < this.count * 3; i++) {
-                positions[i] += (this.targetPositions[i] - positions[i]) * lerpFactor;
+            for (let i = 0; i < this.count; i++) {
+                const idx = i * 3;
+                
+                // Current position
+                const px = positions[idx];
+                const py = positions[idx + 1];
+                const pz = positions[idx + 2];
+                
+                // Target position
+                const tx = this.targetPositions[idx];
+                const ty = this.targetPositions[idx + 1];
+                const tz = this.targetPositions[idx + 2];
+                
+                // Calculate direction to target
+                const dx = tx - px;
+                const dy = ty - py;
+                const dz = tz - pz;
+                const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                
+                // Attraction force towards target shape
+                const attractionX = dist > 0 ? (dx / dist) * this.attractionStrength : 0;
+                const attractionY = dist > 0 ? (dy / dist) * this.attractionStrength : 0;
+                const attractionZ = dist > 0 ? (dz / dist) * this.attractionStrength : 0;
+                
+                // Update velocity with attraction and random component
+                this.velocities[idx] += attractionX + (Math.random() - 0.5) * this.randomness;
+                this.velocities[idx + 1] += attractionY + (Math.random() - 0.5) * this.randomness;
+                this.velocities[idx + 2] += attractionZ + (Math.random() - 0.5) * this.randomness;
+                
+                // Damping to prevent infinite acceleration
+                this.velocities[idx] *= 0.98;
+                this.velocities[idx + 1] *= 0.98;
+                this.velocities[idx + 2] *= 0.98;
+                
+                // Limit maximum velocity
+                const velMag = Math.sqrt(
+                    this.velocities[idx] * this.velocities[idx] +
+                    this.velocities[idx + 1] * this.velocities[idx + 1] +
+                    this.velocities[idx + 2] * this.velocities[idx + 2]
+                );
+                const maxVel = this.diffusionSpeed * 3;
+                if (velMag > maxVel) {
+                    const scale = maxVel / velMag;
+                    this.velocities[idx] *= scale;
+                    this.velocities[idx + 1] *= scale;
+                    this.velocities[idx + 2] *= scale;
+                }
+                
+                // Update position based on velocity
+                positions[idx] += this.velocities[idx] * deltaTime * 60; // Scale by 60 for consistent speed
+                positions[idx + 1] += this.velocities[idx + 1] * deltaTime * 60;
+                positions[idx + 2] += this.velocities[idx + 2] * deltaTime * 60;
             }
+            
             this.geometry.attributes.position.needsUpdate = true;
 
             // Gesture Interaction: Scale
-            const targetScale = 0.1 + (gestureState * 0.9);
+            // Invert pinch: closed (0) = small, open (1) = large
+            // Increase scale range for more visible effect
+            const targetScale = 0.3 + (gestureState * 0.7);
             const currentScale = this.particles.scale.x;
-            const newScale = currentScale + (targetScale - currentScale) * 0.1;
+            const newScale = currentScale + (targetScale - currentScale) * 0.15;
 
             this.particles.scale.set(newScale, newScale, newScale);
         }

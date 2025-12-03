@@ -27,7 +27,7 @@ const particleSystem = new ParticleSystem(scene);
 const handTracker = new HandTracker();
 
 // UI Manager
-const uiManager = new UIManager(particleSystem);
+const uiManager = new UIManager(particleSystem, handTracker);
 
 // Resize Handler
 window.addEventListener('resize', () => {
@@ -46,8 +46,10 @@ function animate() {
   const gestureState = handTracker.getGestureState();
   const fingers = handTracker.getFingers();
   const position = handTracker.getPosition();
+  const rotationZ = handTracker.getRotationZ();
+  const rotationX = handTracker.getRotationX();
 
-  particleSystem.update(elapsedTime, gestureState, fingers, position);
+  particleSystem.update(elapsedTime, gestureState, fingers, position, rotationZ, rotationX);
 
   renderer.render(scene, camera);
 }

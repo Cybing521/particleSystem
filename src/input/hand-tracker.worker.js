@@ -76,10 +76,59 @@ function analyzeHand(landmarks) {
     // Depending on hand side (left/right), this flips. 
     // For simplicity, we'll just count the 4 main fingers for shape switching.
 
+    // 4. Hand Rotation Detection
+    // Left/Right Rotation (Roll): Calculate hand tilt angle
+    // Use wrist (0) and middle finger MCP (9) to determine hand orientation
+    const wrist = landmarks[0];
+    const middleMCP = landmarks[9];
+    const indexMCP = landmarks[5];
+    
+    // Calculate hand direction vector (from wrist to middle of hand)
+    const handVectorX = middleMCP.x - wrist.x;
+    const handVectorY = middleMCP.y - wrist.y;
+    
+    // Calculate angle of hand orientation
+    // When hand is vertical (pointing up), angle should be ~90 degrees
+    // We want to detect left/right tilt from vertical
+    let handAngle = Math.atan2(handVectorY, handVectorX);
+    
+    // Normalize: subtract 90 degrees (PI/2) so vertical = 0
+    handAngle -= Math.PI / 2;
+    
+    // Convert to rotation value: -1 (left tilt) to 1 (right tilt)
+    // Scale by PI/3 (60 degrees) for better sensitivity
+    let rotationZ = handAngle / (Math.PI / 3);
+    rotationZ = Math.max(-1, Math.min(1, rotationZ));
+    
+    // Alternative: Use index finger direction for more stable detection
+    const indexVectorX = indexMCP.x - wrist.x;
+    const indexVectorY = indexMCP.y - wrist.y;
+    let indexAngle = Math.atan2(indexVectorY, indexVectorX) - Math.PI / 2;
+    let rotationZAlt = indexAngle / (Math.PI / 3);
+    rotationZAlt = Math.max(-1, Math.min(1, rotationZAlt));
+    
+    // Average both for stability
+    rotationZ = (rotationZ + rotationZAlt) / 2;
+
+    // Forward/Backward Tilt (Pitch): Use Z depth difference
+    // Calculate average Z of fingertips vs wrist
+    const avgFingerZ = (
+        landmarks[8].z +  // Index tip
+        landmarks[12].z + // Middle tip
+        landmarks[16].z + // Ring tip
+        landmarks[20].z   // Pinky tip
+    ) / 4;
+    const wristZ = wrist.z;
+    // Positive when hand tilts forward (fingers closer to camera), negative when backward
+    let rotationX = (wristZ - avgFingerZ) * 3; // Increased sensitivity
+    rotationX = Math.max(-1, Math.min(1, rotationX));
+
     return {
         pinch: pinch,
         position: center,
-        fingers: fingers
+        fingers: fingers,
+        rotationZ: rotationZ,  // Left (-1) to Right (+1) rotation
+        rotationX: rotationX   // Backward (-1) to Forward (+1) tilt
     };
 }
 
