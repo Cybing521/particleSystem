@@ -34,6 +34,16 @@ export class UIManager {
             </div>
 
             <div class="control-group">
+                <h3>Custom Model</h3>
+                <div class="file-input-wrapper">
+                    <label for="model-upload" class="custom-file-upload">
+                        Upload .glb
+                    </label>
+                    <input type="file" id="model-upload" accept=".glb,.gltf">
+                </div>
+            </div>
+
+            <div class="control-group">
                 <button id="fullscreen-btn">Fullscreen</button>
             </div>
         `;
@@ -60,6 +70,16 @@ export class UIManager {
         const colorPicker = this.container.querySelector('#color-picker');
         colorPicker.addEventListener('input', (e) => {
             this.particleSystem.setColor(e.target.value);
+        });
+
+        // Model Upload
+        const modelUpload = this.container.querySelector('#model-upload');
+        modelUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                this.particleSystem.loadModel(url);
+            }
         });
 
         // Fullscreen

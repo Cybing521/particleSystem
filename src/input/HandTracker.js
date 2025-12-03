@@ -65,36 +65,30 @@ export class HandTracker {
         requestAnimationFrame(() => this.predict());
     }
 
-    processResults(results) {
-        if (results && results.landmarks && results.landmarks.length > 0) {
-            const landmarks = results.landmarks[0];
+    processResults(data) {
+        if (data) {
+            // Smooth the pinch value
+            this.gestureState += (data.pinch - this.gestureState) * 0.1;
 
-            // Thumb tip (4) and Index tip (8)
-            const thumbTip = landmarks[4];
-            const indexTip = landmarks[8];
-
-            // Calculate distance
-            const distance = Math.sqrt(
-                Math.pow(thumbTip.x - indexTip.x, 2) +
-                Math.pow(thumbTip.y - indexTip.y, 2) +
-                Math.pow(thumbTip.z - indexTip.z, 2)
-            );
-
-            // Normalize distance
-            const min = 0.03;
-            const max = 0.15;
-            let normalized = (distance - min) / (max - min);
-            normalized = Math.max(0, Math.min(1, normalized));
-
-            // Smooth the value
-            this.gestureState += (normalized - this.gestureState) * 0.1;
+            this.fingers = data.fingers;
+            this.position = data.position;
         } else {
             // Default to open if no hand detected
             this.gestureState += (1.0 - this.gestureState) * 0.05;
+            this.fingers = 0;
+            this.position = { x: 0.5, y: 0.5 };
         }
     }
 
     getGestureState() {
         return this.gestureState;
+    }
+
+    getFingers() {
+        return this.fingers || 0;
+    }
+
+    getPosition() {
+        return this.position || { x: 0.5, y: 0.5 };
     }
 }

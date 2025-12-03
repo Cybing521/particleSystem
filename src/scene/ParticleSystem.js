@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 export class ParticleSystem {
     constructor(scene) {
@@ -123,14 +124,67 @@ export class ParticleSystem {
         colorObj.setHSL(hsl.h, hsl.s, hsl.l + (Math.random() * 0.1 - 0.05));
     }
 
-    update(time, gestureState = 1.0) {
-        if (this.particles) {
-            // Slow, elegant rotation
-            this.particles.rotation.y = time * 0.05;
-            this.particles.rotation.z = time * 0.02;
+    loadModel(url) {
+        const loader = new GLTFLoader();
+        loader.load(url, (gltf) => {
+            let mesh = null;
+            gltf.scene.traverse((child) => {
+                if (child.isMesh && !mesh) {
+                    mesh = child;
+                }
+            });
 
-            // Breathing Effect: Sine wave for size/opacity
-            // We can modify the material size slightly to simulate breathing
+            if (mesh) {
+                // Sample points from mesh geometry
+                const geometry = mesh.geometry;
+                geometry.computeBoundingBox();
+                const center = new THREE.Vector3();
+                geometry.boundingBox.getCenter(center);
+                geometry.center(); // Center the geometry
+
+                const posAttribute = geometry.attributes.position;
+                const vertexCount = posAttribute.count;
+
+                for (let i = 0; i < this.count; i++) {
+                    // Randomly sample vertices
+                    const index = Math.floor(Math.random() * vertexCount);
+
+                    // Scale up slightly if model is too small
+                    const scale = 2.0;
+
+                    this.targetPositions[i * 3] = posAttribute.getX(index) * scale;
+                    this.targetPositions[i * 3 + 1] = posAttribute.getY(index) * scale;
+                    this.targetPositions[i * 3 + 2] = posAttribute.getZ(index) * scale;
+                }
+            }
+        });
+    }
+
+    update(time, gestureState = 1.0, fingers = 0, handPos = { x: 0.5, y: 0.5 }) {
+        if (this.particles) {
+            // Rotation based on hand position (0.5 is center)
+            // Map 0..1 to -PI..PI
+            const targetRotY = (handPos.x - 0.5) * Math.PI;
+            const targetRotX = (handPos.y - 0.5) * Math.PI;
+
+            // Smooth rotation
+            this.particles.rotation.y += (targetRotY - this.particles.rotation.y) * 0.05;
+            this.particles.rotation.x += (targetRotX - this.particles.rotation.x) * 0.05;
+
+            // Auto rotation if no hand
+            if (gestureState > 0.95 && fingers === 0) {
+                this.particles.rotation.y += 0.002;
+            }
+
+            // Finger Shape Switching
+            // 1: Sphere, 2: Cube, 3: Torus, 4: Cloud
+            // Add debounce or check if stable to avoid flickering
+            if (fingers === 1) this.setShape('sphere');
+            if (fingers === 2) this.setShape('cube');
+            if (fingers === 3) this.setShape('torus');
+            if (fingers === 4) this.setShape('random');
+
+            // Breathing Effect
             const breath = Math.sin(time * 2.0) * 0.005;
             this.material.size = 0.03 + breath;
 
@@ -143,7 +197,7 @@ export class ParticleSystem {
             }
             this.geometry.attributes.position.needsUpdate = true;
 
-            // Gesture Interaction
+            // Gesture Interaction: Scale
             const targetScale = 0.1 + (gestureState * 0.9);
             const currentScale = this.particles.scale.x;
             const newScale = currentScale + (targetScale - currentScale) * 0.1;

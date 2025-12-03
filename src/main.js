@@ -44,8 +44,10 @@ function animate() {
 
   const elapsedTime = clock.getElapsedTime();
   const gestureState = handTracker.getGestureState();
+  const fingers = handTracker.getFingers();
+  const position = handTracker.getPosition();
 
-  particleSystem.update(elapsedTime, gestureState);
+  particleSystem.update(elapsedTime, gestureState, fingers, position);
 
   renderer.render(scene, camera);
 }
