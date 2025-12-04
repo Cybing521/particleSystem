@@ -147,28 +147,78 @@ export class HandTracker {
     }
 
     async initHandLandmarker() {
-        try {
-            const vision = await FilesetResolver.forVisionTasks(
-                'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm'
-            );
+        const modelPath = `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`;
+        const maxRetries = 3;
+        let lastError = null;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`[HandTracker] Initializing HandLandmarker (attempt ${attempt}/${maxRetries})...`);
+                
+                const vision = await FilesetResolver.forVisionTasks(
+                    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm'
+                );
 
-            // Initialize Hand Landmarker (Full Model for high precision, support both hands)
-            this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                baseOptions: {
-                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                    delegate: "GPU"
-                },
-                runningMode: 'VIDEO',
-                numHands: 2, // Enable dual hand detection
-                minHandDetectionConfidence: 0.5,
-                minHandPresenceConfidence: 0.5,
-                minTrackingConfidence: 0.5
-            });
-            console.log('HandTracker Initialized with MediaPipe Hand Landmarker (Full Model)');
-        } catch (error) {
-            console.error("Failed to initialize MediaPipe Hand Landmarker:", error);
-            throw error;
+                // Initialize Hand Landmarker (Full Model for high precision, support both hands)
+                this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: modelPath,
+                        delegate: "GPU"
+                    },
+                    runningMode: 'VIDEO',
+                    numHands: 2, // Enable dual hand detection
+                    minHandDetectionConfidence: 0.5,
+                    minHandPresenceConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+                
+                console.log('[HandTracker] Successfully initialized with MediaPipe Hand Landmarker (Full Model)');
+                return; // 成功初始化，退出函数
+            } catch (error) {
+                lastError = error;
+                const errorMsg = error.message || String(error);
+                console.warn(`[HandTracker] Initialization attempt ${attempt} failed:`, errorMsg);
+                
+                // 检查是否是网络错误
+                const isNetworkError = errorMsg.includes('Failed to fetch') || 
+                                      errorMsg.includes('ERR_CONNECTION') ||
+                                      errorMsg.includes('NetworkError') ||
+                                      errorMsg.includes('network');
+                
+                if (isNetworkError && attempt < maxRetries) {
+                    const delay = attempt * 1000; // 递增延迟：1s, 2s, 3s
+                    console.log(`[HandTracker] Network error detected. Retrying in ${delay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                } else if (attempt < maxRetries) {
+                    // 其他错误也重试
+                    const delay = 500;
+                    console.log(`[HandTracker] Retrying in ${delay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                }
+            }
         }
+        
+        // 所有重试都失败了
+        const errorMessage = lastError?.message || String(lastError) || 'Unknown error';
+        const isNetworkError = errorMessage.includes('Failed to fetch') || 
+                              errorMessage.includes('ERR_CONNECTION') ||
+                              errorMessage.includes('NetworkError');
+        
+        let userFriendlyMessage = '无法初始化手势识别模型。';
+        if (isNetworkError) {
+            userFriendlyMessage += '\n\n可能的原因：\n' +
+                '1. 网络连接问题：无法访问 Google Storage\n' +
+                '2. 防火墙或代理设置阻止了连接\n' +
+                '3. 请检查网络连接后重试\n\n' +
+                '如果问题持续，请检查浏览器控制台获取更多信息。';
+        } else {
+            userFriendlyMessage += `\n\n错误详情：${errorMessage}`;
+        }
+        
+        console.error('[HandTracker] Failed to initialize MediaPipe Hand Landmarker after all retries:', lastError);
+        throw new Error(userFriendlyMessage);
     }
 
     async setupCamera() {
@@ -377,14 +427,14 @@ export class HandTracker {
             Math.pow(thumbTip.z - indexTip.z, 2)
         );
 
-        // Normalize pinch with calibration settings
+        // Normalize pinch with calibration settings (降低灵敏度：增加pinchSensitivity默认值)
         const pinchMin = this.calibrationSettings?.pinchMinDistance || 0.03;
         const pinchMax = this.calibrationSettings?.pinchMaxDistance || 0.15;
-        const pinchSensitivity = this.calibrationSettings?.pinchSensitivity || 1.0;
+        const pinchSensitivity = this.calibrationSettings?.pinchSensitivity || 1.5; // 从1.0增加到1.5，降低灵敏度
         
         let pinch = (pinchDist - pinchMin) / (pinchMax - pinchMin);
         pinch = Math.max(0, Math.min(1, pinch));
-        // Apply sensitivity
+        // Apply sensitivity (更高的sensitivity值会降低响应速度)
         pinch = Math.pow(pinch, 1.0 / pinchSensitivity);
 
         // 2. Hand Centroid (Position)
@@ -397,9 +447,9 @@ export class HandTracker {
         // 3. Finger Counting (Improved detection with better thresholds)
         // Tips: 8, 12, 16, 20. PIP joints: 6, 10, 14, 18.
         // Finger is open if Tip.y < PIP.y (assuming hand is upright)
-        // Use a threshold to make detection more stable
-        const fingerThreshold = (this.calibrationSettings?.fingerThreshold || 0.02) * 
-                                (this.calibrationSettings?.fingerSensitivity || 1.0);
+        // Use a threshold to make detection more stable (降低灵敏度：增加阈值)
+        const fingerThreshold = (this.calibrationSettings?.fingerThreshold || 0.03) * 
+                                (this.calibrationSettings?.fingerSensitivity || 1.3); // 从0.02增加到0.03，sensitivity从1.0增加到1.3
         let fingers = 0;
 
         // Index - check if tip is significantly above PIP joint
@@ -489,15 +539,15 @@ export class HandTracker {
         
         // Process left hand data (position and rotation)
         if (leftHandData) {
-            // Left hand: position and rotation
-            this.leftHand.position.x += (leftHandData.position.x - this.leftHand.position.x) * 0.2;
-            this.leftHand.position.y += (leftHandData.position.y - this.leftHand.position.y) * 0.2;
+            // Left hand: position and rotation (降低灵敏度：从0.2/0.25降到0.1/0.12)
+            this.leftHand.position.x += (leftHandData.position.x - this.leftHand.position.x) * 0.1;
+            this.leftHand.position.y += (leftHandData.position.y - this.leftHand.position.y) * 0.1;
             
             if (leftHandData.rotationZ !== undefined) {
-                this.leftHand.rotationZ += (leftHandData.rotationZ - this.leftHand.rotationZ) * 0.25;
+                this.leftHand.rotationZ += (leftHandData.rotationZ - this.leftHand.rotationZ) * 0.12;
             }
             if (leftHandData.rotationX !== undefined) {
-                this.leftHand.rotationX += (leftHandData.rotationX - this.leftHand.rotationX) * 0.25;
+                this.leftHand.rotationX += (leftHandData.rotationX - this.leftHand.rotationX) * 0.12;
             }
         } else {
             // Smoothly return to center if no left hand
@@ -509,8 +559,8 @@ export class HandTracker {
         
         // Process right hand data (shape and scale)
         if (rightHandData) {
-            // Right hand: gesture state (pinch) and fingers
-            this.rightHand.gestureState += (rightHandData.pinch - this.rightHand.gestureState) * 0.2;
+            // Right hand: gesture state (pinch) and fingers (降低灵敏度：从0.2降到0.1)
+            this.rightHand.gestureState += (rightHandData.pinch - this.rightHand.gestureState) * 0.1;
             
             // Use state machine for finger detection to avoid jitter
             this.fingerStateHistory.push(rightHandData.fingers);

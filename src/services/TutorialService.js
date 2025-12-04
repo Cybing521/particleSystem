@@ -36,7 +36,7 @@ export class TutorialService {
                 {
                     id: 'right-hand-shape',
                     title: '右手控制形状',
-                    description: '伸出1根手指切换为球体，伸出3根手指切换为圆环',
+                    description: '伸出1根手指切换为球体，伸出2根手指切换为心形，伸出3根手指切换为圆环',
                     gesture: 'fingers',
                     icon: '✋'
                 },

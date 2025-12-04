@@ -57,6 +57,8 @@ handTracker.setFingerChangeCallback((fingers) => {
     // When finger count changes, update shape if needed
     if (fingers === 1) {
         particleSystem.setShape('sphere');
+    } else if (fingers === 2) {
+        particleSystem.setShape('heart');
     } else if (fingers === 3) {
         particleSystem.setShape('torus');
     }

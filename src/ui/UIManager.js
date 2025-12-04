@@ -40,6 +40,7 @@ export class UIManager {
                     <h3>形状</h3>
                     <div class="shape-selector">
                         <button data-shape="sphere" class="active">球体</button>
+                        <button data-shape="heart">心形</button>
                         <button data-shape="torus">圆环</button>
                     </div>
                 </div>
@@ -274,10 +275,51 @@ export class UIManager {
                 this.handTracker.disableCamera();
             } else {
                 try {
+                    // 显示加载状态
+                    const cameraText = cameraBtn.querySelector('.camera-text');
+                    const originalText = cameraText.textContent;
+                    cameraText.textContent = '正在初始化...';
+                    cameraBtn.disabled = true;
+                    
                     await this.handTracker.enableCamera();
                 } catch (err) {
-                    alert('无法访问摄像头。请确保已授予摄像头权限。');
                     console.error('Camera error:', err);
+                    
+                    // 根据错误类型显示不同的提示
+                    const errorMessage = err.message || String(err);
+                    let userMessage = '无法启动摄像头。\n\n';
+                    
+                    if (errorMessage.includes('无法初始化手势识别模型') || 
+                        errorMessage.includes('Failed to fetch') ||
+                        errorMessage.includes('ERR_CONNECTION')) {
+                        userMessage += '手势识别模型加载失败。\n\n' +
+                            '可能的原因：\n' +
+                            '• 网络连接问题，无法访问 Google Storage\n' +
+                            '• 防火墙或代理设置阻止了连接\n' +
+                            '• 请检查网络连接后重试\n\n' +
+                            '提示：请确保可以访问 storage.googleapis.com';
+                    } else if (errorMessage.includes('Permission') || 
+                               errorMessage.includes('NotAllowedError') ||
+                               errorMessage.includes('权限')) {
+                        userMessage += '摄像头权限被拒绝。\n\n' +
+                            '请：\n' +
+                            '• 在浏览器设置中允许摄像头访问\n' +
+                            '• 刷新页面后重试';
+                    } else if (errorMessage.includes('NotFoundError') ||
+                               errorMessage.includes('没有找到')) {
+                        userMessage += '未检测到摄像头设备。\n\n' +
+                            '请：\n' +
+                            '• 检查摄像头是否已连接\n' +
+                            '• 确保摄像头未被其他应用占用';
+                    } else {
+                        userMessage += `错误详情：${errorMessage}`;
+                    }
+                    
+                    alert(userMessage);
+                } finally {
+                    // 恢复按钮状态
+                    cameraBtn.disabled = false;
+                    this.updateCameraButton();
                 }
             }
             this.updateCameraButton();

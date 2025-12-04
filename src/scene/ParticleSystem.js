@@ -198,6 +198,22 @@ export class ParticleSystem {
                 x += (Math.random() - 0.5) * 0.2;
                 y += (Math.random() - 0.5) * 0.2;
                 z += (Math.random() - 0.5) * 0.2;
+            } else if (shape === 'heart') {
+                // Heart shape using parametric equations with volume
+                const t = Math.random() * Math.PI * 2;
+                const scale = 0.12; // Scale factor for heart size
+                // Heart parametric equations (standard heart curve)
+                const heartX = 16 * Math.pow(Math.sin(t), 3);
+                const heartY = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+                // Add volume by varying the depth based on position
+                const depth = (Math.random() - 0.5) * 0.3; // Volume variation
+                x = scale * heartX;
+                y = scale * heartY;
+                z = depth;
+                // Add some random variation for more natural distribution
+                x += (Math.random() - 0.5) * 0.05;
+                y += (Math.random() - 0.5) * 0.05;
+                z += (Math.random() - 0.5) * 0.05;
             } else {
                 // Default to sphere if unknown shape
                 const r = 2 * Math.cbrt(Math.random());
@@ -335,9 +351,9 @@ export class ParticleSystem {
                 targetRotX = (leftHand.position.y - 0.5) * Math.PI * 1.5;
                 targetRotZ = leftHand.rotationZ * Math.PI;
                 
-                // Right hand: shape and scale (大幅增加缩放范围：0.1 到 5.0)
+                // Right hand: shape and scale (调整缩放范围：0.3 到 3.0)
                 shapeFingers = rightHand.fingers;
-                targetScale = 0.1 + (rightHand.gestureState * 4.9); // 0.1 to 5.0
+                targetScale = 0.5 + (rightHand.gestureState * 2.7); // 0.3 to 3.0
             } else if (leftHand) {
                 // Only left hand detected - use for rotation, default scale
                 targetRotY = (leftHand.position.x - 0.5) * Math.PI * 1.5;
@@ -353,20 +369,20 @@ export class ParticleSystem {
                 targetRotX = (rightHand.position.y - 0.5) * Math.PI * 1.5;
                 targetRotZ = rotationZ * Math.PI;
                 shapeFingers = rightHand.fingers;
-                targetScale = 0.1 + (rightHand.gestureState * 4.9); // 0.1 to 5.0
+                targetScale = 0.3 + (rightHand.gestureState * 2.7); // 0.3 to 3.0
             } else {
                 // No hands or legacy single hand mode
                 targetRotY = (handPos.x - 0.5) * Math.PI * 1.5;
                 targetRotX = (handPos.y - 0.5) * Math.PI * 1.5;
                 targetRotZ = rotationZ * Math.PI;
                 shapeFingers = fingers;
-                targetScale = 0.1 + (gestureState * 4.9); // 0.1 to 5.0
+                targetScale = 0.3 + (gestureState * 2.7); // 0.3 to 3.0
             }
 
-            // Smooth rotation with increased responsiveness
-            this.particles.rotation.y += (targetRotY - this.particles.rotation.y) * 0.1;
-            this.particles.rotation.x += (targetRotX - this.particles.rotation.x) * 0.1;
-            this.particles.rotation.z += (targetRotZ - this.particles.rotation.z) * 0.12;
+            // Smooth rotation (降低灵敏度：从0.1/0.12降到0.06/0.08)
+            this.particles.rotation.y += (targetRotY - this.particles.rotation.y) * 0.06;
+            this.particles.rotation.x += (targetRotX - this.particles.rotation.x) * 0.06;
+            this.particles.rotation.z += (targetRotZ - this.particles.rotation.z) * 0.08;
 
             // Auto rotation if no hand
             if (!leftHand && !rightHand && gestureState > 0.95 && fingers === 0) {
@@ -374,8 +390,9 @@ export class ParticleSystem {
             }
 
             // Finger Shape Switching (from right hand)
-            // 1: Sphere, 3: Torus
+            // 1: Sphere, 2: Heart, 3: Torus
             if (shapeFingers === 1) this.setShape('sphere');
+            if (shapeFingers === 2) this.setShape('heart');
             if (shapeFingers === 3) this.setShape('torus');
 
             // Enhanced Breathing Effect - size and opacity pulse together
@@ -535,9 +552,9 @@ export class ParticleSystem {
             avgSize /= this.count;
             this.material.size = avgSize;
 
-            // Gesture Interaction: Scale (from right hand or legacy gestureState)
+            // Gesture Interaction: Scale (降低灵敏度：从0.15降到0.08)
             const currentScale = this.particles.scale.x;
-            const newScale = currentScale + (targetScale - currentScale) * 0.15;
+            const newScale = currentScale + (targetScale - currentScale) * 0.08;
 
             this.particles.scale.set(newScale, newScale, newScale);
         }
