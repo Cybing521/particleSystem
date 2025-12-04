@@ -5,29 +5,23 @@ export class ParticleSystem {
     constructor(scene) {
         this.scene = scene;
         this.particles = null;
-        this.glowParticles = null; // Glow effect layer
         this.baseCount = 5000; // 基础粒子数量
         this.count = 5000; // 当前粒子数量（会根据性能动态调整）
+        this.minVisibleCount = 3000; // 最小可见粒子数量（防止粒子过少）
         this.geometry = null;
         this.material = null;
-        this.glowGeometry = null;
-        this.glowMaterial = null;
         
         // Particle velocities for free diffusion
         this.velocities = new Float32Array(this.count * 3);
         
         // Particle physics properties
         this.masses = new Float32Array(this.count); // Particle masses
-        this.lifetimes = new Float32Array(this.count); // Particle lifetimes (0-1)
-        this.maxLifetime = 8.0; // Maximum lifetime in seconds (reduced for more frequent resets)
         
         // Visual effects properties
         this.particleSizes = new Float32Array(this.count); // Dynamic particle sizes
-        this.baseSize = 0.03; // Base particle size
+        this.baseSize = 0.04; // Base particle size (increased for better visibility)
         this.sizeVariation = 0.03; // Size variation based on velocity (increased)
         this.trailEnabled = false; // Trail effect (can be enabled if needed)
-        this.glowIntensity = 0.5; // Glow effect intensity (increased)
-        this.lifetimeColorIntensity = 0.5; // Lifetime color variation intensity
         
         // Current shape tracking
         this.currentShape = 'sphere'; // Track current shape for UI sync
@@ -79,11 +73,6 @@ export class ParticleSystem {
             this.geometry.dispose();
             this.material.dispose();
         }
-        if (this.glowParticles) {
-            this.scene.remove(this.glowParticles);
-            this.glowGeometry.dispose();
-            this.glowMaterial.dispose();
-        }
 
         this.count = count;
         this.geometry = new THREE.BufferGeometry();
@@ -117,11 +106,6 @@ export class ParticleSystem {
             this.masses = new Float32Array(count);
         } else {
             this.masses = this.masses.subarray(0, count);
-        }
-        if (!this.lifetimes || this.lifetimes.length < count) {
-            this.lifetimes = new Float32Array(count);
-        } else {
-            this.lifetimes = this.lifetimes.subarray(0, count);
         }
         
         // Initialize particle sizes array
@@ -157,7 +141,6 @@ export class ParticleSystem {
             
             // Initialize physics properties
             this.masses[i] = 0.5 + Math.random() * 0.5; // Random mass between 0.5 and 1.0
-            this.lifetimes[i] = Math.random(); // Random initial lifetime
             
             this.updateParticleColor(color, i);
             colors[i * 3] = color.r;
@@ -184,52 +167,12 @@ export class ParticleSystem {
             blending: THREE.NormalBlending,
             depthWrite: false,
             transparent: true,
-            opacity: 0.6,
+            opacity: 0.8, // Increased opacity for better visibility
             // Enable size variation per particle (requires custom shader, but we'll update size dynamically)
         });
 
         this.particles = new THREE.Points(this.geometry, this.material);
         this.scene.add(this.particles);
-        
-        // Create glow layer for enhanced visual effects
-        this.createGlowLayer(count);
-    }
-    
-    createGlowLayer(count) {
-        // Create a separate layer for glow effect
-        this.glowGeometry = new THREE.BufferGeometry();
-        const glowPositions = new Float32Array(count * 3);
-        const glowColors = new Float32Array(count * 3);
-        
-        // Copy positions and colors from main particles
-        for (let i = 0; i < count; i++) {
-            const idx = i * 3;
-            glowPositions[idx] = this.initialPositions[idx];
-            glowPositions[idx + 1] = this.initialPositions[idx + 1];
-            glowPositions[idx + 2] = this.initialPositions[idx + 2];
-            glowColors[idx] = this.baseColor.r;
-            glowColors[idx + 1] = this.baseColor.g;
-            glowColors[idx + 2] = this.baseColor.b;
-        }
-        
-        this.glowGeometry.setAttribute('position', new THREE.BufferAttribute(glowPositions, 3));
-        this.glowGeometry.setAttribute('color', new THREE.BufferAttribute(glowColors, 3));
-        
-        const glowSprite = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png');
-        
-        this.glowMaterial = new THREE.PointsMaterial({
-            size: this.baseSize * 4.0, // Much larger size for visible glow
-            sizeAttenuation: true,
-            vertexColors: true,
-            map: glowSprite,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            transparent: true,
-            opacity: 0.4 // More visible glow
-        });
-        
-        this.glowParticles = new THREE.Points(this.glowGeometry, this.glowMaterial);
-        this.scene.add(this.glowParticles);
     }
 
     calculateShapePositions(shape, array) {
@@ -392,9 +335,9 @@ export class ParticleSystem {
                 targetRotX = (leftHand.position.y - 0.5) * Math.PI * 1.5;
                 targetRotZ = leftHand.rotationZ * Math.PI;
                 
-                // Right hand: shape and scale
+                // Right hand: shape and scale (大幅增加缩放范围：0.1 到 5.0)
                 shapeFingers = rightHand.fingers;
-                targetScale = 0.3 + (rightHand.gestureState * 0.7);
+                targetScale = 0.1 + (rightHand.gestureState * 4.9); // 0.1 to 5.0
             } else if (leftHand) {
                 // Only left hand detected - use for rotation, default scale
                 targetRotY = (leftHand.position.x - 0.5) * Math.PI * 1.5;
@@ -410,14 +353,14 @@ export class ParticleSystem {
                 targetRotX = (rightHand.position.y - 0.5) * Math.PI * 1.5;
                 targetRotZ = rotationZ * Math.PI;
                 shapeFingers = rightHand.fingers;
-                targetScale = 0.3 + (rightHand.gestureState * 0.7);
+                targetScale = 0.1 + (rightHand.gestureState * 4.9); // 0.1 to 5.0
             } else {
                 // No hands or legacy single hand mode
                 targetRotY = (handPos.x - 0.5) * Math.PI * 1.5;
                 targetRotX = (handPos.y - 0.5) * Math.PI * 1.5;
                 targetRotZ = rotationZ * Math.PI;
                 shapeFingers = fingers;
-                targetScale = 0.3 + (gestureState * 0.7);
+                targetScale = 0.1 + (gestureState * 4.9); // 0.1 to 5.0
             }
 
             // Smooth rotation with increased responsiveness
@@ -435,11 +378,11 @@ export class ParticleSystem {
             if (shapeFingers === 1) this.setShape('sphere');
             if (shapeFingers === 3) this.setShape('torus');
 
-            // Breathing Effect with enhanced glow
-            const breath = Math.sin(time * 2.0) * 0.008; // Increased breath effect
-            const glowPulse = Math.sin(time * 1.5) * 0.15 + 0.85; // Pulse between 0.7 and 1.0
-            this.material.size = this.baseSize + breath;
-            this.material.opacity = 0.7 + glowPulse * 0.2; // More visible pulsing opacity
+            // Enhanced Breathing Effect - size and opacity pulse together
+            const breathSize = Math.sin(time * 2.0) * 0.01; // Size breathing effect
+            const breathOpacity = Math.sin(time * 1.8) * 0.15 + 0.85; // Opacity breathing: 0.7 to 1.0
+            this.material.size = this.baseSize + breathSize;
+            this.material.opacity = breathOpacity; // Breathing opacity for depth
 
             // Free diffusion with attraction to target shape + Physics
             const positions = this.geometry.attributes.position.array;
@@ -449,25 +392,7 @@ export class ParticleSystem {
             for (let i = 0; i < this.count; i++) {
                 const idx = i * 3;
                 
-                // Update particle lifetime
-                this.lifetimes[i] += actualDeltaTime / this.maxLifetime;
-                if (this.lifetimes[i] >= 1.0) {
-                    // Reset particle when lifetime expires - create visible rebirth effect
-                    this.lifetimes[i] = 0;
-                    // Reset position to initial
-                    positions[idx] = this.initialPositions[idx];
-                    positions[idx + 1] = this.initialPositions[idx + 1];
-                    positions[idx + 2] = this.initialPositions[idx + 2];
-                    // Reset velocity with initial boost for visibility
-                    const speed = this.diffusionSpeed * (0.8 + Math.random() * 0.4); // Slightly faster initial speed
-                    const theta = Math.random() * Math.PI * 2;
-                    const phi = Math.acos(2 * Math.random() - 1);
-                    this.velocities[idx] = speed * Math.sin(phi) * Math.cos(theta);
-                    this.velocities[idx + 1] = speed * Math.sin(phi) * Math.sin(theta);
-                    this.velocities[idx + 2] = speed * Math.cos(phi);
-                    // Reset mass for variation
-                    this.masses[i] = 0.5 + Math.random() * 0.5;
-                }
+                // Removed lifetime-based particle reset - particles now have continuous breathing effect
                 
                 // Current position
                 const px = positions[idx];
@@ -580,20 +505,18 @@ export class ParticleSystem {
                 positions[idx + 1] += this.velocities[idx + 1] * actualDeltaTime * 60;
                 positions[idx + 2] += this.velocities[idx + 2] * actualDeltaTime * 60;
                 
-                // Update color based on lifetime and velocity (enhanced visual effects)
-                const lifetimeFactor = 1.0 - this.lifetimes[i]; // 0 (new) to 1 (old)
+                // Update color with breathing effect: alternating bright (1.0) and dark (0.75)
+                // Use particle index and time to create wave-like breathing effect
                 const colorIdx = i * 3;
+                const breathingPhase = (i * 0.1 + time * 2.0) % (Math.PI * 2);
+                const breathingFactor = (Math.sin(breathingPhase) + 1.0) / 2.0; // 0 to 1
+                const brightness = 0.75 + breathingFactor * 0.25; // Range: 0.75 to 1.0
                 
                 // Add velocity-based color variation (faster particles are brighter)
-                const velColorBoost = Math.min(normalizedVel * 0.5, 0.5); // Increased boost
+                const velColorBoost = Math.min(normalizedVel * 0.3, 0.3);
+                const finalBrightness = Math.min(brightness * (1.0 + velColorBoost), 1.0);
                 
-                // Enhanced lifetime effect: particles fade from bright to dark as they age
-                // New particles are brighter, old particles are darker
-                const lifetimeBrightness = 0.3 + lifetimeFactor * 0.7; // Range: 0.3 to 1.0
-                const finalBrightness = lifetimeBrightness * (1.0 + velColorBoost);
-                
-                // Enhanced glow effect: faster particles have more intense colors
-                // Also apply lifetime-based color variation
+                // Apply brightness to colors
                 colors[colorIdx] = Math.min(this.baseColor.r * finalBrightness, 1.0);
                 colors[colorIdx + 1] = Math.min(this.baseColor.g * finalBrightness, 1.0);
                 colors[colorIdx + 2] = Math.min(this.baseColor.b * finalBrightness, 1.0);
@@ -611,37 +534,6 @@ export class ParticleSystem {
             }
             avgSize /= this.count;
             this.material.size = avgSize;
-            
-            // Update glow layer to follow main particles
-            if (this.glowParticles && this.glowGeometry) {
-                const glowPositions = this.glowGeometry.attributes.position.array;
-                const glowColors = this.glowGeometry.attributes.color.array;
-                
-                for (let i = 0; i < this.count; i++) {
-                    const idx = i * 3;
-                    glowPositions[idx] = positions[idx];
-                    glowPositions[idx + 1] = positions[idx + 1];
-                    glowPositions[idx + 2] = positions[idx + 2];
-                    
-                    // Enhanced glow colors: much brighter and more saturated
-                    // Glow is more intense for new particles (based on lifetime)
-                    const lifetimeFactor = 1.0 - this.lifetimes[i];
-                    const glowIntensity = 0.5 + lifetimeFactor * 0.5; // New particles have stronger glow
-                    
-                    // Glow colors are much brighter and more saturated
-                    glowColors[idx] = Math.min(colors[idx] * 2.5 * glowIntensity, 1.0);
-                    glowColors[idx + 1] = Math.min(colors[idx + 1] * 2.5 * glowIntensity, 1.0);
-                    glowColors[idx + 2] = Math.min(colors[idx + 2] * 2.5 * glowIntensity, 1.0);
-                }
-                
-                this.glowGeometry.attributes.position.needsUpdate = true;
-                this.glowGeometry.attributes.color.needsUpdate = true;
-                
-                // Update glow size dynamically - make it more visible
-                this.glowMaterial.size = avgSize * 4.0; // Increased from 2.5 to 4.0
-                // Enhanced pulsing glow with more variation
-                this.glowMaterial.opacity = 0.3 + Math.sin(time * 1.5) * 0.15; // Range: 0.15 to 0.45
-            }
 
             // Gesture Interaction: Scale (from right hand or legacy gestureState)
             const currentScale = this.particles.scale.x;
@@ -664,13 +556,15 @@ export class ParticleSystem {
         let targetCount = this.count;
         
         if (avgFPS < this.targetFPS * 0.7) {
-            // 性能较差，减少粒子数量
+            // 性能较差，减少粒子数量，但确保不低于最小可见数量
             const currentIndex = this.particleCountSteps.indexOf(this.count);
             if (currentIndex > 0) {
                 targetCount = this.particleCountSteps[currentIndex - 1];
             } else {
-                targetCount = this.minParticleCount;
+                targetCount = Math.max(this.minParticleCount, this.minVisibleCount);
             }
+            // 确保不低于最小可见数量
+            targetCount = Math.max(targetCount, this.minVisibleCount);
         } else if (avgFPS > this.targetFPS * 1.3) {
             // 性能良好，可以增加粒子数量
             const currentIndex = this.particleCountSteps.indexOf(this.count);

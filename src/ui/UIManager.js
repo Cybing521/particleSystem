@@ -1,8 +1,20 @@
+import { GestureCalibrationService } from '../services/GestureCalibrationService.js';
+import { TutorialService } from '../services/TutorialService.js';
+
 export class UIManager {
-    constructor(particleSystem, handTracker) {
+    constructor(particleSystem, handTracker, gestureService = null) {
         this.particleSystem = particleSystem;
         this.handTracker = handTracker;
+        this.gestureService = gestureService;
         this.container = document.getElementById('ui-container');
+        
+        // Initialize services
+        this.calibrationService = new GestureCalibrationService(handTracker);
+        this.tutorialService = new TutorialService(handTracker, particleSystem);
+        
+        // Load saved calibration
+        this.calibrationService.loadFromLocalStorage();
+        this.calibrationService.applyToHandTracker();
 
         this.init();
     }
@@ -20,30 +32,30 @@ export class UIManager {
 
         controls.innerHTML = `
             <div class="panel-header">
-                <h2 class="panel-title">Controls</h2>
-                <button id="collapse-btn" class="collapse-btn" title="Collapse/Expand">−</button>
+                <h2 class="panel-title">控制面板</h2>
+                <button id="collapse-btn" class="collapse-btn" title="折叠/展开">−</button>
             </div>
             <div class="panel-content">
                 <div class="control-group">
-                    <h3>Shape</h3>
+                    <h3>形状</h3>
                     <div class="shape-selector">
-                        <button data-shape="sphere" class="active">Sphere</button>
-                        <button data-shape="torus">Torus</button>
+                        <button data-shape="sphere" class="active">球体</button>
+                        <button data-shape="torus">圆环</button>
                     </div>
                 </div>
                 
                 <div class="control-group">
-                    <h3>Color</h3>
+                    <h3>颜色</h3>
                     <div class="color-picker-wrapper">
                         <input type="color" id="color-picker" value="#222222">
                     </div>
                 </div>
 
                 <div class="control-group">
-                    <h3>Custom Model</h3>
+                    <h3>自定义模型</h3>
                     <div class="file-input-wrapper">
                         <label for="model-upload" class="custom-file-upload">
-                            Upload .glb
+                            上传 .glb
                         </label>
                         <input type="file" id="model-upload" accept=".glb,.gltf">
                     </div>
@@ -52,12 +64,14 @@ export class UIManager {
                 <div class="control-group">
                     <button id="camera-toggle-btn" class="camera-btn">
                         <span class="camera-icon">📷</span>
-                        <span class="camera-text">Enable Camera</span>
+                        <span class="camera-text">启用摄像头</span>
                     </button>
                 </div>
 
-                <div class="control-group">
-                    <button id="fullscreen-btn">Fullscreen</button>
+                <div class="control-group button-row">
+                    <button id="calibration-btn">校准</button>
+                    <button id="tutorial-btn">教程</button>
+                    <button id="fullscreen-btn">全屏</button>
                 </div>
             </div>
         `;
@@ -275,6 +289,18 @@ export class UIManager {
         // Gesture toggle: Set callback for hand tracker
         this.handTracker.setToggleCallback(toggleCamera);
 
+        // Calibration
+        const calibrationBtn = this.container.querySelector('#calibration-btn');
+        calibrationBtn.addEventListener('click', () => {
+            this.showCalibrationPanel();
+        });
+
+        // Tutorial
+        const tutorialBtn = this.container.querySelector('#tutorial-btn');
+        tutorialBtn.addEventListener('click', () => {
+            this.showTutorial();
+        });
+
         // Fullscreen
         const fsBtn = this.container.querySelector('#fullscreen-btn');
         fsBtn.addEventListener('click', () => {
@@ -286,6 +312,223 @@ export class UIManager {
                 }
             }
         });
+        
+        // Show contextual hints periodically
+        this.startHintSystem();
+    }
+    
+    showCalibrationPanel() {
+        // Create calibration modal
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>手势校准</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="calibration-control">
+                        <label>捏合灵敏度: <span id="pinch-sens-value">1.0</span></label>
+                        <input type="range" id="pinch-sens" min="0.5" max="2.0" step="0.1" value="1.0">
+                    </div>
+                    <div class="calibration-control">
+                        <label>手指检测灵敏度: <span id="finger-sens-value">1.0</span></label>
+                        <input type="range" id="finger-sens" min="0.5" max="2.0" step="0.1" value="1.0">
+                    </div>
+                    <div class="calibration-control">
+                        <label>位置检测灵敏度: <span id="pos-sens-value">1.0</span></label>
+                        <input type="range" id="pos-sens" min="0.5" max="2.0" step="0.1" value="1.0">
+                    </div>
+                    <div class="calibration-control">
+                        <label>旋转检测灵敏度: <span id="rot-sens-value">1.0</span></label>
+                        <input type="range" id="rot-sens" min="0.5" max="2.0" step="0.1" value="1.0">
+                    </div>
+                    <div class="calibration-control">
+                        <label>平滑度: <span id="smooth-value">0.2</span></label>
+                        <input type="range" id="smooth" min="0.1" max="0.5" step="0.05" value="0.2">
+                    </div>
+                    <div class="modal-actions">
+                        <button id="calibration-reset">重置为默认</button>
+                        <button id="calibration-save">保存</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Load current settings
+        const settings = this.calibrationService.getSettings();
+        document.getElementById('pinch-sens').value = settings.pinchSensitivity;
+        document.getElementById('finger-sens').value = settings.fingerSensitivity;
+        document.getElementById('pos-sens').value = settings.positionSensitivity;
+        document.getElementById('rot-sens').value = settings.rotationSensitivity;
+        document.getElementById('smooth').value = settings.smoothingFactor;
+        
+        // Update value displays
+        const updateValue = (id, value) => {
+            document.getElementById(id + '-value').textContent = parseFloat(value).toFixed(1);
+        };
+        
+        document.getElementById('pinch-sens').addEventListener('input', (e) => {
+            updateValue('pinch-sens', e.target.value);
+        });
+        document.getElementById('finger-sens').addEventListener('input', (e) => {
+            updateValue('finger-sens', e.target.value);
+        });
+        document.getElementById('pos-sens').addEventListener('input', (e) => {
+            updateValue('pos-sens', e.target.value);
+        });
+        document.getElementById('rot-sens').addEventListener('input', (e) => {
+            updateValue('rot-sens', e.target.value);
+        });
+        document.getElementById('smooth').addEventListener('input', (e) => {
+            updateValue('smooth', e.target.value);
+        });
+        
+        // Save button
+        document.getElementById('calibration-save').addEventListener('click', () => {
+            const newSettings = {
+                pinchSensitivity: parseFloat(document.getElementById('pinch-sens').value),
+                fingerSensitivity: parseFloat(document.getElementById('finger-sens').value),
+                positionSensitivity: parseFloat(document.getElementById('pos-sens').value),
+                rotationSensitivity: parseFloat(document.getElementById('rot-sens').value),
+                smoothingFactor: parseFloat(document.getElementById('smooth').value)
+            };
+            this.calibrationService.updateSettings(newSettings);
+            this.calibrationService.applyToHandTracker();
+            document.body.removeChild(modal);
+        });
+        
+        // Reset button
+        document.getElementById('calibration-reset').addEventListener('click', () => {
+            this.calibrationService.resetToDefaults();
+            const settings = this.calibrationService.getSettings();
+            document.getElementById('pinch-sens').value = settings.pinchSensitivity;
+            document.getElementById('finger-sens').value = settings.fingerSensitivity;
+            document.getElementById('pos-sens').value = settings.positionSensitivity;
+            document.getElementById('rot-sens').value = settings.rotationSensitivity;
+            document.getElementById('smooth').value = settings.smoothingFactor;
+            updateValue('pinch-sens', settings.pinchSensitivity);
+            updateValue('finger-sens', settings.fingerSensitivity);
+            updateValue('pos-sens', settings.positionSensitivity);
+            updateValue('rot-sens', settings.rotationSensitivity);
+            updateValue('smooth', settings.smoothingFactor);
+        });
+        
+        // Close button
+        modal.querySelector('.modal-close').addEventListener('click', () => {
+            document.body.removeChild(modal);
+        });
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+            }
+        });
+    }
+    
+    showTutorial() {
+        const tutorial = this.tutorialService.startTutorial('basic');
+        if (!tutorial) return;
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-content tutorial-modal">
+                <div class="modal-header">
+                    <h2>手势控制教程</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="tutorial-step">
+                        <div class="tutorial-icon">${tutorial.steps[0].icon}</div>
+                        <h3 id="tutorial-step-title">${tutorial.steps[0].title}</h3>
+                        <p id="tutorial-step-desc">${tutorial.steps[0].description}</p>
+                        <div class="tutorial-progress">
+                            <span id="tutorial-progress">1 / ${tutorial.steps.length}</span>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button id="tutorial-prev" disabled>上一步</button>
+                        <button id="tutorial-next">下一步</button>
+                        <button id="tutorial-skip">跳过</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        const updateStep = () => {
+            const step = this.tutorialService.getCurrentStep();
+            if (!step) {
+                document.body.removeChild(modal);
+                return;
+            }
+            
+            document.getElementById('tutorial-step-title').textContent = step.title;
+            document.getElementById('tutorial-step-desc').textContent = step.description;
+            document.querySelector('.tutorial-icon').textContent = step.icon;
+            const currentStep = this.tutorialService.tutorialStep + 1;
+            const totalSteps = tutorial.steps.length;
+            document.getElementById('tutorial-progress').textContent = `${currentStep} / ${totalSteps}`;
+            
+            document.getElementById('tutorial-prev').disabled = currentStep === 1;
+            document.getElementById('tutorial-next').textContent = currentStep === totalSteps ? '完成' : '下一步';
+        };
+        
+        document.getElementById('tutorial-next').addEventListener('click', () => {
+            const step = this.tutorialService.nextStep();
+            if (step) {
+                updateStep();
+            } else {
+                document.body.removeChild(modal);
+            }
+        });
+        
+        document.getElementById('tutorial-prev').addEventListener('click', () => {
+            this.tutorialService.previousStep();
+            updateStep();
+        });
+        
+        document.getElementById('tutorial-skip').addEventListener('click', () => {
+            this.tutorialService.cancelTutorial();
+            document.body.removeChild(modal);
+        });
+        
+        modal.querySelector('.modal-close').addEventListener('click', () => {
+            this.tutorialService.cancelTutorial();
+            document.body.removeChild(modal);
+        });
+    }
+    
+    startHintSystem() {
+        // Show contextual hints every 5 seconds
+        setInterval(() => {
+            if (this.tutorialService.isActive) return; // Don't show hints during tutorial
+            
+            const hint = this.tutorialService.generateContextualHint();
+            if (hint) {
+                this.showHint(hint);
+            }
+        }, 5000);
+    }
+    
+    showHint(message) {
+        const hint = document.createElement('div');
+        hint.className = 'hint-message';
+        hint.textContent = message;
+        this.container.appendChild(hint);
+        
+        setTimeout(() => {
+            hint.classList.add('fade-out');
+            setTimeout(() => {
+                if (hint.parentNode) {
+                    hint.parentNode.removeChild(hint);
+                }
+            }, 300);
+        }, 3000);
     }
 
     updateCameraButton() {
@@ -294,11 +537,11 @@ export class UIManager {
         const cameraIcon = cameraBtn.querySelector('.camera-icon');
         
         if (this.handTracker.isCameraEnabled()) {
-            cameraText.textContent = 'Disable Camera';
+            cameraText.textContent = '禁用摄像头';
             cameraIcon.textContent = '📷';
             cameraBtn.classList.add('active');
         } else {
-            cameraText.textContent = 'Enable Camera';
+            cameraText.textContent = '启用摄像头';
             cameraIcon.textContent = '📷';
             cameraBtn.classList.remove('active');
         }

@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { ParticleSystem } from './scene/ParticleSystem.js';
 import { HandTracker } from './input/HandTracker.js';
+import { GestureService } from './services/GestureService.js';
 import { UIManager } from './ui/UIManager.js';
+import { DataVisualization } from './ui/DataVisualization.js';
 import './style.css';
 
 const app = document.querySelector('#app');
@@ -26,8 +28,29 @@ const particleSystem = new ParticleSystem(scene);
 // Hand Tracker
 const handTracker = new HandTracker();
 
+// Gesture Service (模块化服务)
+const gestureService = new GestureService(handTracker);
+
+// Error handling
+gestureService.onError((errorInfo) => {
+    console.error('[Main] Gesture service error:', errorInfo);
+    // 可以在这里显示用户友好的错误提示
+});
+
+// Initialize gesture service
+gestureService.initialize().then(success => {
+    if (success) {
+        console.log('[Main] Gesture service initialized');
+    } else {
+        console.warn('[Main] Gesture service initialization failed');
+    }
+});
+
 // UI Manager
-const uiManager = new UIManager(particleSystem, handTracker);
+const uiManager = new UIManager(particleSystem, handTracker, gestureService);
+
+// Data Visualization
+const dataVisualization = new DataVisualization(handTracker, particleSystem);
 
 // Set up callbacks for UI synchronization
 handTracker.setFingerChangeCallback((fingers) => {
@@ -60,16 +83,30 @@ function animate() {
 
   const elapsedTime = clock.getElapsedTime();
   
-  // Get dual hand data
-  const leftHand = handTracker.getLeftHand();
-  const rightHand = handTracker.getRightHand();
+  // Get gesture data through service (模块化)
+  const gestureData = gestureService.getGestureData();
   
-  // Legacy single hand support (for backward compatibility)
-  const gestureState = handTracker.getGestureState();
-  const fingers = handTracker.getFingers();
-  const position = handTracker.getPosition();
-  const rotationZ = handTracker.getRotationZ();
-  const rotationX = handTracker.getRotationX();
+  let leftHand, rightHand, gestureState, fingers, position, rotationZ, rotationX;
+  
+  if (!gestureData) {
+    // Fallback to direct handTracker access if service unavailable
+    leftHand = handTracker.getLeftHand();
+    rightHand = handTracker.getRightHand();
+    gestureState = handTracker.getGestureState();
+    fingers = handTracker.getFingers();
+    position = handTracker.getPosition();
+    rotationZ = handTracker.getRotationZ();
+    rotationX = handTracker.getRotationX();
+  } else {
+    // Use service data
+    leftHand = gestureData.leftHand;
+    rightHand = gestureData.rightHand;
+    gestureState = gestureData.gestureState;
+    fingers = gestureData.fingers;
+    position = gestureData.position;
+    rotationZ = gestureData.rotationZ;
+    rotationX = gestureData.rotationX;
+  }
 
   // Debug: Log gesture data periodically
   frameCount++;

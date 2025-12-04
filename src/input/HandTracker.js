@@ -55,6 +55,16 @@ export class HandTracker {
         this.frameCounter = 0;
 
         // Don't auto-init, wait for user to enable camera
+        
+        // Calibration settings
+        this.calibrationSettings = null;
+    }
+    
+    /**
+     * 设置校准参数
+     */
+    setCalibrationSettings(settings) {
+        this.calibrationSettings = settings;
     }
 
     setToggleCallback(callback) {
@@ -367,9 +377,15 @@ export class HandTracker {
             Math.pow(thumbTip.z - indexTip.z, 2)
         );
 
-        // Normalize pinch (0.03 to 0.15)
-        let pinch = (pinchDist - 0.03) / (0.15 - 0.03);
+        // Normalize pinch with calibration settings
+        const pinchMin = this.calibrationSettings?.pinchMinDistance || 0.03;
+        const pinchMax = this.calibrationSettings?.pinchMaxDistance || 0.15;
+        const pinchSensitivity = this.calibrationSettings?.pinchSensitivity || 1.0;
+        
+        let pinch = (pinchDist - pinchMin) / (pinchMax - pinchMin);
         pinch = Math.max(0, Math.min(1, pinch));
+        // Apply sensitivity
+        pinch = Math.pow(pinch, 1.0 / pinchSensitivity);
 
         // 2. Hand Centroid (Position)
         // Use Wrist(0) and Middle Knuckle(9) average for stable center
@@ -382,7 +398,8 @@ export class HandTracker {
         // Tips: 8, 12, 16, 20. PIP joints: 6, 10, 14, 18.
         // Finger is open if Tip.y < PIP.y (assuming hand is upright)
         // Use a threshold to make detection more stable
-        const fingerThreshold = 0.02; // Threshold for finger detection (more lenient)
+        const fingerThreshold = (this.calibrationSettings?.fingerThreshold || 0.02) * 
+                                (this.calibrationSettings?.fingerSensitivity || 1.0);
         let fingers = 0;
 
         // Index - check if tip is significantly above PIP joint
