@@ -78,12 +78,18 @@ const handAngle = Math.atan2(handVectorY, handVectorX);
 
 ### 1.4 处理流程
 
-1. **初始化**: 加载 MediaPipe Hand Landmarker 模型（Full 版本）
+1. **初始化**: 
+   - 创建 Web Worker 并加载 MediaPipe Hand Landmarker 模型（Full 版本）
+   - Worker 在独立线程中运行，不阻塞主线程
 2. **视频捕获**: 通过 `getUserMedia` API 获取摄像头视频流
-3. **实时检测**: 对每一帧视频调用 `detectForVideo()`
-4. **数据处理**: 从检测结果中提取手部关键点（`landmarks`）并计算手势特征
-5. **平滑处理**: 使用插值算法平滑手势数据，避免抖动
-6. **应用控制**: 将手势数据传递给粒子系统进行交互
+3. **帧处理**: 
+   - 主线程将视频帧转换为 `ImageBitmap`
+   - 通过 `postMessage` 将 `ImageBitmap` 传递给 Worker（使用 Transferable Objects）
+4. **实时检测**: Worker 线程中对每一帧视频调用 `detectForVideo()`
+5. **数据处理**: Worker 中从检测结果提取手部关键点（`landmarks`）并计算手势特征
+6. **结果返回**: Worker 通过 `postMessage` 将处理后的数据返回主线程
+7. **平滑处理**: 主线程使用插值算法平滑手势数据，避免抖动
+8. **应用控制**: 将手势数据传递给粒子系统进行交互
 
 ### 1.5 技术优势
 
@@ -93,6 +99,8 @@ const handAngle = Math.atan2(handVectorY, handVectorX);
 - ✅ **GPU加速**: 支持 WebGL/WebGPU 加速，性能更好
 - ✅ **轻量高效**: 单一检测器降低资源占用，避免性能问题
 - ✅ **专注精准**: 专注于手部检测，提供最佳的手势识别体验
+- ✅ **Web Worker 优化**: 检测计算在独立线程中运行，主线程专注于 UI 渲染，避免阻塞
+- ✅ **Transferable Objects**: 使用 ImageBitmap 和 Transferable Objects 优化数据传输性能
 
 ---
 
@@ -100,10 +108,14 @@ const handAngle = Math.atan2(handVectorY, handVectorX);
 
 ### 2.1 性能优化
 
-**a) Web Worker 优化**
-- 将手势检测移到 Web Worker，避免阻塞主线程
-- 使用 OffscreenCanvas 在 Worker 中处理视频帧
-- 注意：需要解决 MediaPipe 在 Worker 中的兼容性问题
+**a) Web Worker 优化** ⚠️ **已优化（主线程方案）**
+- ⚠️ MediaPipe 在 Web Worker 中存在兼容性问题（`importScripts` 在 module worker 中不支持）
+- ✅ 采用主线程运行，但通过以下方式优化性能：
+  - ✅ 自适应帧率控制：根据设备性能动态调整检测频率
+  - ✅ 帧跳过机制：低性能时自动跳过部分帧的检测
+  - ✅ GPU 加速：使用 `delegate: "GPU"` 启用硬件加速
+  - ✅ 优化配置：合理的置信度阈值，平衡精度和性能
+- 📝 **未来优化方向**：如果 MediaPipe 未来支持 Worker，可以迁移到 Worker 以获得更好的性能
 
 **b) 帧率优化** ✅ **已实现**
 - ✅ 实现自适应帧率：根据设备性能动态调整检测频率

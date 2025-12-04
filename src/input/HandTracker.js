@@ -46,15 +46,19 @@ export class HandTracker {
 
     async enableCamera() {
         if (this.isTracking) {
+            console.log('[HandTracker] Camera already enabled');
             return; // Already enabled
         }
         
+        console.log('[HandTracker] Enabling camera...');
         if (!this.handLandmarker) {
+            console.log('[HandTracker] Initializing HandLandmarker...');
             await this.initHandLandmarker();
         }
         
         await this.setupCamera();
         this.isTracking = true;
+        console.log('[HandTracker] Camera enabled, starting detection...');
     }
 
     disableCamera() {
@@ -127,22 +131,37 @@ export class HandTracker {
         document.body.appendChild(this.video);
 
         try {
+            console.log('[HandTracker] Requesting camera access...');
             this.stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            console.log('[HandTracker] Camera access granted');
             this.video.srcObject = this.stream;
             this.video.addEventListener('loadeddata', () => {
+                console.log('[HandTracker] Video loaded, dimensions:', this.video.videoWidth, 'x', this.video.videoHeight);
                 if (this.isTracking) {
+                    console.log('[HandTracker] Starting prediction loop...');
                     this.predict();
                 }
             });
+            this.video.addEventListener('error', (err) => {
+                console.error('[HandTracker] Video error:', err);
+            });
         } catch (err) {
-            console.error('Error accessing webcam:', err);
+            console.error('[HandTracker] Error accessing webcam:', err);
             this.isTracking = false;
             throw err; // Re-throw so UI can handle it
         }
     }
 
     async predict() {
-        if (!this.isTracking || this.predicting) {
+        if (!this.isTracking) {
+            return;
+        }
+        
+        if (this.predicting) {
+            // Skip if already processing
+            if (this.isTracking) {
+                requestAnimationFrame(() => this.predict());
+            }
             return;
         }
         
@@ -179,26 +198,78 @@ export class HandTracker {
         this.frameSkipCounter = 0;
         this.predicting = true;
         
-        if (this.video && this.video.readyState >= 2 && this.handLandmarker) {
-            if (this.video.currentTime !== this.lastVideoTime) {
-                this.lastVideoTime = this.video.currentTime;
+        // Debug: Check video and handLandmarker state
+        if (!this.video) {
+            console.warn('[HandTracker] Video element not found');
+            this.predicting = false;
+            if (this.isTracking) {
+                requestAnimationFrame(() => this.predict());
+            }
+            return;
+        }
+        
+        if (this.video.readyState < 2) {
+            // Video not ready yet
+            this.predicting = false;
+            if (this.isTracking) {
+                requestAnimationFrame(() => this.predict());
+            }
+            return;
+        }
+        
+        if (!this.handLandmarker) {
+            console.warn('[HandTracker] HandLandmarker not initialized');
+            this.predicting = false;
+            if (this.isTracking) {
+                requestAnimationFrame(() => this.predict());
+            }
+            return;
+        }
+        
+        if (this.video.currentTime !== this.lastVideoTime) {
+            this.lastVideoTime = this.video.currentTime;
+            
+            try {
+                // Run hand detection
+                const handResults = this.handLandmarker.detectForVideo(this.video, currentTime);
                 
-                try {
-                    // Run hand detection
-                    const handResults = this.handLandmarker.detectForVideo(this.video, currentTime);
-                    
-                    // Process hand results
-                    let processedData = null;
-                    if (handResults.landmarks && handResults.landmarks.length > 0) {
-                        const landmarks = handResults.landmarks[0];
-                        processedData = this.analyzeHand(landmarks);
-                    }
-                    
-                    this.processResults(processedData);
-                } catch (error) {
-                    console.error('Detection error:', error);
-                    this.processResults(null);
+                // Debug: Log detection results periodically
+                if (Math.random() < 0.05) { // 5% chance to log
+                    console.log('[HandTracker] Detection results:', {
+                        hasResults: !!handResults,
+                        landmarksCount: handResults?.landmarks?.length || 0,
+                        videoTime: this.video.currentTime,
+                        readyState: this.video.readyState
+                    });
                 }
+                
+                // Process hand results
+                let processedData = null;
+                if (handResults.landmarks && handResults.landmarks.length > 0) {
+                    const landmarks = handResults.landmarks[0];
+                    processedData = this.analyzeHand(landmarks);
+                    
+                    // Debug: Log processed data periodically
+                    if (Math.random() < 0.05) { // 5% chance to log
+                        console.log('[HandTracker] Processed hand data:', {
+                            pinch: processedData.pinch.toFixed(2),
+                            fingers: processedData.fingers,
+                            position: { x: processedData.position.x.toFixed(2), y: processedData.position.y.toFixed(2) },
+                            rotationZ: processedData.rotationZ.toFixed(2),
+                            rotationX: processedData.rotationX.toFixed(2)
+                        });
+                    }
+                } else {
+                    // Debug: Log when no hand detected
+                    if (Math.random() < 0.02) { // 2% chance to log
+                        console.log('[HandTracker] No hand detected');
+                    }
+                }
+                
+                this.processResults(processedData);
+            } catch (error) {
+                console.error('[HandTracker] Detection error:', error);
+                this.processResults(null);
             }
         }
         
@@ -206,31 +277,6 @@ export class HandTracker {
         
         if (this.isTracking) {
             requestAnimationFrame(() => this.predict());
-        }
-    }
-
-    // 自适应帧率更新：根据性能动态调整检测频率
-    updateAdaptiveFrameRate() {
-        if (this.fpsHistory.length < 10) {
-            return; // 数据不足，不调整
-        }
-        
-        // 计算平均FPS
-        const avgFPS = this.fpsHistory.reduce((a, b) => a + b, 0) / this.fpsHistory.length;
-        
-        // 根据FPS调整帧跳过率
-        // 如果FPS低于目标值，增加跳过率以降低检测频率
-        if (avgFPS < this.targetFPS * 0.8) {
-            // 性能较差，增加跳过率（最多每3帧检测一次）
-            this.frameSkipRate = Math.min(2, this.frameSkipRate + 1);
-        } else if (avgFPS > this.targetFPS * 1.2) {
-            // 性能良好，减少跳过率（尝试每帧都检测）
-            this.frameSkipRate = Math.max(0, this.frameSkipRate - 1);
-        }
-        
-        // 调试输出（可选）
-        if (Math.random() < 0.01) {
-            console.log(`[HandTracker] Adaptive FPS: ${avgFPS.toFixed(1)}, Skip Rate: ${this.frameSkipRate}`);
         }
     }
 
@@ -317,6 +363,31 @@ export class HandTracker {
         };
     }
 
+    // 自适应帧率更新：根据性能动态调整检测频率
+    updateAdaptiveFrameRate() {
+        if (this.fpsHistory.length < 10) {
+            return; // 数据不足，不调整
+        }
+        
+        // 计算平均FPS
+        const avgFPS = this.fpsHistory.reduce((a, b) => a + b, 0) / this.fpsHistory.length;
+        
+        // 根据FPS调整帧跳过率
+        // 如果FPS低于目标值，增加跳过率以降低检测频率
+        if (avgFPS < this.targetFPS * 0.8) {
+            // 性能较差，增加跳过率（最多每3帧检测一次）
+            this.frameSkipRate = Math.min(2, this.frameSkipRate + 1);
+        } else if (avgFPS > this.targetFPS * 1.2) {
+            // 性能良好，减少跳过率（尝试每帧都检测）
+            this.frameSkipRate = Math.max(0, this.frameSkipRate - 1);
+        }
+        
+        // 调试输出（可选）
+        if (Math.random() < 0.01) {
+            console.log(`[HandTracker] Adaptive FPS: ${avgFPS.toFixed(1)}, Skip Rate: ${this.frameSkipRate}`);
+        }
+    }
+
     processResults(data) {
         const currentTime = Date.now();
         
@@ -335,6 +406,17 @@ export class HandTracker {
                 this.rotationX += (data.rotationX - this.rotationX) * 0.25;
             }
             
+            // Debug: Log current gesture state periodically
+            if (Math.random() < 0.05) { // 5% chance to log
+                console.log('[HandTracker] Current gesture state:', {
+                    gestureState: this.gestureState.toFixed(2),
+                    fingers: this.fingers,
+                    position: { x: this.position.x.toFixed(2), y: this.position.y.toFixed(2) },
+                    rotationZ: this.rotationZ.toFixed(2),
+                    rotationX: this.rotationX.toFixed(2)
+                });
+            }
+            
             // Gesture toggle: Closed fist (all fingers down) for 1 second toggles camera
             // Check if all 4 fingers are closed (fingers === 0) and hand is closed (pinch < 0.3)
             if (data.fingers === 0 && data.pinch < 0.3) {
@@ -343,6 +425,7 @@ export class HandTracker {
                 // If held for 1 second (1000ms) and callback exists
                 if (this.gestureToggleCooldown >= 1000 && this.toggleCallback && 
                     currentTime - this.lastToggleTime > 2000) { // 2 second cooldown
+                    console.log('[HandTracker] Gesture toggle triggered!');
                     this.toggleCallback();
                     this.lastToggleTime = currentTime;
                     this.gestureToggleCooldown = 0;
@@ -350,17 +433,6 @@ export class HandTracker {
             } else {
                 // Reset cooldown if gesture is released
                 this.gestureToggleCooldown = 0;
-            }
-            
-            // Debug output (can be removed later)
-            if (Math.random() < 0.01) { // Log occasionally to avoid spam
-                console.log('Hand detected:', {
-                    pinch: this.gestureState.toFixed(2),
-                    fingers: this.fingers,
-                    position: { x: this.position.x.toFixed(2), y: this.position.y.toFixed(2) },
-                    rotationZ: this.rotationZ.toFixed(2),
-                    rotationX: this.rotationX.toFixed(2)
-                });
             }
         } else {
             // Default to open if no hand detected

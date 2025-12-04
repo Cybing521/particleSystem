@@ -7,10 +7,22 @@ self.onmessage = async (e) => {
     const { type, data } = e.data;
 
     if (type === 'init') {
-        await initHandLandmarker();
-        self.postMessage({ type: 'initialized' });
+        try {
+            await initHandLandmarker();
+            self.postMessage({ type: 'initialized' });
+        } catch (error) {
+            self.postMessage({ type: 'error', error: error.message });
+        }
     } else if (type === 'detect') {
-        if (handLandmarker) {
+        if (!handLandmarker) {
+            self.postMessage({ type: 'error', error: 'HandLandmarker not initialized' });
+            if (data.videoBitmap) {
+                data.videoBitmap.close();
+            }
+            return;
+        }
+
+        try {
             const { videoBitmap, timestamp } = data;
             if (timestamp !== lastVideoTime) {
                 lastVideoTime = timestamp;
@@ -24,9 +36,14 @@ self.onmessage = async (e) => {
                 }
 
                 self.postMessage({ type: 'results', results: processedData });
-                videoBitmap.close();
-            } else {
-                videoBitmap.close();
+            }
+            // Always close the bitmap to free memory
+            videoBitmap.close();
+        } catch (error) {
+            console.error('Worker detection error:', error);
+            self.postMessage({ type: 'error', error: error.message });
+            if (data.videoBitmap) {
+                data.videoBitmap.close();
             }
         }
     }
@@ -144,8 +161,12 @@ async function initHandLandmarker() {
                 delegate: "GPU"
             },
             runningMode: 'VIDEO',
-            numHands: 1
+            numHands: 1,
+            minHandDetectionConfidence: 0.5,
+            minHandPresenceConfidence: 0.5,
+            minTrackingConfidence: 0.5
         });
+        console.log('Worker: Hand Landmarker initialized');
     } catch (error) {
         console.error("Worker: Failed to initialize MediaPipe:", error);
     }

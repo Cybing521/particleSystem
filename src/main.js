@@ -38,6 +38,7 @@ window.addEventListener('resize', () => {
 
 // Animation Loop
 const clock = new THREE.Clock();
+let frameCount = 0;
 
 function animate() {
   requestAnimationFrame(animate);
@@ -49,9 +50,23 @@ function animate() {
   const rotationZ = handTracker.getRotationZ();
   const rotationX = handTracker.getRotationX();
 
+  // Debug: Log gesture data periodically
+  frameCount++;
+  if (frameCount % 60 === 0) { // Every 60 frames (~1 second at 60fps)
+    console.log('[Main] Gesture data to ParticleSystem:', {
+      gestureState: gestureState.toFixed(2),
+      fingers: fingers,
+      position: { x: position.x.toFixed(2), y: position.y.toFixed(2) },
+      rotationZ: rotationZ.toFixed(2),
+      rotationX: rotationX.toFixed(2),
+      isTracking: handTracker.isCameraEnabled()
+    });
+  }
+
   particleSystem.update(elapsedTime, gestureState, fingers, position, rotationZ, rotationX);
 
   renderer.render(scene, camera);
 }
 
+console.log('[Main] Starting animation loop...');
 animate();
