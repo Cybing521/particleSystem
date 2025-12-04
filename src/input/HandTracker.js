@@ -100,17 +100,22 @@ export class HandTracker {
                 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm'
             );
 
+            // Initialize Hand Landmarker (Full Model for high precision)
             this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
                 baseOptions: {
                     modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
                     delegate: "GPU"
                 },
                 runningMode: 'VIDEO',
-                numHands: 1
+                numHands: 1,
+                minHandDetectionConfidence: 0.5,
+                minHandPresenceConfidence: 0.5,
+                minTrackingConfidence: 0.5
             });
-            console.log('HandTracker Initialized');
+            console.log('HandTracker Initialized with MediaPipe Hand Landmarker (Full Model)');
         } catch (error) {
-            console.error("Failed to initialize MediaPipe:", error);
+            console.error("Failed to initialize MediaPipe Hand Landmarker:", error);
+            throw error;
         }
     }
 
@@ -178,16 +183,22 @@ export class HandTracker {
             if (this.video.currentTime !== this.lastVideoTime) {
                 this.lastVideoTime = this.video.currentTime;
                 
-                const results = this.handLandmarker.detectForVideo(this.video, currentTime);
-                
-                // Process results
-                let processedData = null;
-                if (results.landmarks && results.landmarks.length > 0) {
-                    const landmarks = results.landmarks[0];
-                    processedData = this.analyzeHand(landmarks);
+                try {
+                    // Run hand detection
+                    const handResults = this.handLandmarker.detectForVideo(this.video, currentTime);
+                    
+                    // Process hand results
+                    let processedData = null;
+                    if (handResults.landmarks && handResults.landmarks.length > 0) {
+                        const landmarks = handResults.landmarks[0];
+                        processedData = this.analyzeHand(landmarks);
+                    }
+                    
+                    this.processResults(processedData);
+                } catch (error) {
+                    console.error('Detection error:', error);
+                    this.processResults(null);
                 }
-                
-                this.processResults(processedData);
             }
         }
         
