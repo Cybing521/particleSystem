@@ -13,10 +13,24 @@ export class ParticleSystem {
         // Particle velocities for free diffusion
         this.velocities = new Float32Array(this.count * 3);
         
+        // Particle physics properties
+        this.masses = new Float32Array(this.count); // Particle masses
+        this.lifetimes = new Float32Array(this.count); // Particle lifetimes (0-1)
+        this.maxLifetime = 10.0; // Maximum lifetime in seconds
+        
         // Diffusion parameters
         this.diffusionSpeed = 0.02; // Base speed of particle movement
         this.attractionStrength = 0.001; // Strength of attraction to target shape
         this.randomness = 0.005; // Random movement component
+        
+        // Physics parameters
+        this.gravity = -0.0005; // Gravity strength (negative = downward)
+        this.collisionRadius = 0.05; // Collision detection radius
+        this.collisionDamping = 0.8; // Collision damping factor
+        this.forceFieldStrength = 0.0002; // Force field strength
+        this.forceFieldRadius = 2.0; // Force field radius
+        this.forceFieldCenter = new THREE.Vector3(0, 0, 0); // Force field center
+        this.forceFieldType = 'attract'; // 'attract' or 'repel'
 
         // 内存优化：性能监控和自适应调整
         this.fpsHistory = [];
@@ -77,6 +91,18 @@ export class ParticleSystem {
             // 创建新数组
             this.velocities = new Float32Array(count * 3);
         }
+        
+        // Initialize physics properties arrays
+        if (!this.masses || this.masses.length < count) {
+            this.masses = new Float32Array(count);
+        } else {
+            this.masses = this.masses.subarray(0, count);
+        }
+        if (!this.lifetimes || this.lifetimes.length < count) {
+            this.lifetimes = new Float32Array(count);
+        } else {
+            this.lifetimes = this.lifetimes.subarray(0, count);
+        }
 
         const color = new THREE.Color();
         // Default to a very dark grey/black for contrast against white
@@ -101,6 +127,10 @@ export class ParticleSystem {
             this.velocities[i * 3] = speed * Math.sin(phi) * Math.cos(theta);
             this.velocities[i * 3 + 1] = speed * Math.sin(phi) * Math.sin(theta);
             this.velocities[i * 3 + 2] = speed * Math.cos(phi);
+            
+            // Initialize physics properties
+            this.masses[i] = 0.5 + Math.random() * 0.5; // Random mass between 0.5 and 1.0
+            this.lifetimes[i] = Math.random(); // Random initial lifetime
             
             this.updateParticleColor(color, i);
             colors[i * 3] = color.r;
@@ -139,10 +169,6 @@ export class ParticleSystem {
                 x = r * Math.sin(phi) * Math.cos(theta);
                 y = r * Math.sin(phi) * Math.sin(theta);
                 z = r * Math.cos(phi);
-            } else if (shape === 'cube') {
-                x = (Math.random() - 0.5) * 3;
-                y = (Math.random() - 0.5) * 3;
-                z = (Math.random() - 0.5) * 3;
             } else if (shape === 'torus') {
                 const u = Math.random() * Math.PI * 2;
                 const v = Math.random() * Math.PI * 2;
@@ -155,10 +181,14 @@ export class ParticleSystem {
                 x += (Math.random() - 0.5) * 0.2;
                 y += (Math.random() - 0.5) * 0.2;
                 z += (Math.random() - 0.5) * 0.2;
-            } else { // Random Cloud
-                x = (Math.random() - 0.5) * 5;
-                y = (Math.random() - 0.5) * 5;
-                z = (Math.random() - 0.5) * 5;
+            } else {
+                // Default to sphere if unknown shape
+                const r = 2 * Math.cbrt(Math.random());
+                const theta = Math.random() * 2 * Math.PI;
+                const phi = Math.acos(2 * Math.random() - 1);
+                x = r * Math.sin(phi) * Math.cos(theta);
+                y = r * Math.sin(phi) * Math.sin(theta);
+                z = r * Math.cos(phi);
             }
 
             array[i * 3] = x;
@@ -278,23 +308,40 @@ export class ParticleSystem {
             }
 
             // Finger Shape Switching
-            // 1: Sphere, 2: Cube, 3: Torus, 4: Cloud
+            // 1: Sphere, 3: Torus
             // Add debounce or check if stable to avoid flickering
             if (fingers === 1) this.setShape('sphere');
-            if (fingers === 2) this.setShape('cube');
             if (fingers === 3) this.setShape('torus');
-            if (fingers === 4) this.setShape('random');
 
             // Breathing Effect
             const breath = Math.sin(time * 2.0) * 0.005;
             this.material.size = 0.03 + breath;
 
-            // Free diffusion with attraction to target shape
+            // Free diffusion with attraction to target shape + Physics
             const positions = this.geometry.attributes.position.array;
-            const frameTime = 0.016; // Approximate frame time (60fps)
+            const colors = this.geometry.attributes.color.array;
+            const actualDeltaTime = 0.016; // Approximate frame time (60fps)
 
             for (let i = 0; i < this.count; i++) {
                 const idx = i * 3;
+                
+                // Update particle lifetime
+                this.lifetimes[i] += actualDeltaTime / this.maxLifetime;
+                if (this.lifetimes[i] >= 1.0) {
+                    // Reset particle when lifetime expires
+                    this.lifetimes[i] = 0;
+                    // Reset position to initial
+                    positions[idx] = this.initialPositions[idx];
+                    positions[idx + 1] = this.initialPositions[idx + 1];
+                    positions[idx + 2] = this.initialPositions[idx + 2];
+                    // Reset velocity
+                    const speed = this.diffusionSpeed * (0.5 + Math.random() * 0.5);
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    this.velocities[idx] = speed * Math.sin(phi) * Math.cos(theta);
+                    this.velocities[idx + 1] = speed * Math.sin(phi) * Math.sin(theta);
+                    this.velocities[idx + 2] = speed * Math.cos(phi);
+                }
                 
                 // Current position
                 const px = positions[idx];
@@ -317,10 +364,66 @@ export class ParticleSystem {
                 const attractionY = dist > 0 ? (dy / dist) * this.attractionStrength : 0;
                 const attractionZ = dist > 0 ? (dz / dist) * this.attractionStrength : 0;
                 
-                // Update velocity with attraction and random component
-                this.velocities[idx] += attractionX + (Math.random() - 0.5) * this.randomness;
-                this.velocities[idx + 1] += attractionY + (Math.random() - 0.5) * this.randomness;
-                this.velocities[idx + 2] += attractionZ + (Math.random() - 0.5) * this.randomness;
+                // Gravity effect (downward force)
+                const gravityForce = this.gravity * this.masses[i];
+                
+                // Force field effect
+                const fieldDx = this.forceFieldCenter.x - px;
+                const fieldDy = this.forceFieldCenter.y - py;
+                const fieldDz = this.forceFieldCenter.z - pz;
+                const fieldDist = Math.sqrt(fieldDx * fieldDx + fieldDy * fieldDy + fieldDz * fieldDz);
+                
+                let forceFieldX = 0, forceFieldY = 0, forceFieldZ = 0;
+                if (fieldDist < this.forceFieldRadius && fieldDist > 0.01) {
+                    const fieldStrength = this.forceFieldStrength * (1 - fieldDist / this.forceFieldRadius);
+                    const direction = this.forceFieldType === 'attract' ? 1 : -1;
+                    forceFieldX = (fieldDx / fieldDist) * fieldStrength * direction;
+                    forceFieldY = (fieldDy / fieldDist) * fieldStrength * direction;
+                    forceFieldZ = (fieldDz / fieldDist) * fieldStrength * direction;
+                }
+                
+                // Update velocity with all forces
+                this.velocities[idx] += (attractionX + forceFieldX + (Math.random() - 0.5) * this.randomness) * actualDeltaTime * 60;
+                this.velocities[idx + 1] += (attractionY + forceFieldY + gravityForce + (Math.random() - 0.5) * this.randomness) * actualDeltaTime * 60;
+                this.velocities[idx + 2] += (attractionZ + forceFieldZ + (Math.random() - 0.5) * this.randomness) * actualDeltaTime * 60;
+                
+                // Collision detection with nearby particles (simplified)
+                for (let j = i + 1; j < Math.min(i + 10, this.count); j++) {
+                    const jdx = i * 3;
+                    const px2 = positions[jdx];
+                    const py2 = positions[jdx + 1];
+                    const pz2 = positions[jdx + 2];
+                    
+                    const colDx = px - px2;
+                    const colDy = py - py2;
+                    const colDz = pz - pz2;
+                    const colDist = Math.sqrt(colDx * colDx + colDy * colDy + colDz * colDz);
+                    
+                    if (colDist < this.collisionRadius && colDist > 0.001) {
+                        // Simple collision response
+                        const overlap = this.collisionRadius - colDist;
+                        const normalX = colDx / colDist;
+                        const normalY = colDy / colDist;
+                        const normalZ = colDz / colDist;
+                        
+                        // Separate particles
+                        const separation = overlap * 0.5;
+                        positions[idx] += normalX * separation;
+                        positions[idx + 1] += normalY * separation;
+                        positions[idx + 2] += normalZ * separation;
+                        positions[jdx] -= normalX * separation;
+                        positions[jdx + 1] -= normalY * separation;
+                        positions[jdx + 2] -= normalZ * separation;
+                        
+                        // Apply collision damping
+                        this.velocities[idx] *= this.collisionDamping;
+                        this.velocities[idx + 1] *= this.collisionDamping;
+                        this.velocities[idx + 2] *= this.collisionDamping;
+                        this.velocities[jdx] *= this.collisionDamping;
+                        this.velocities[jdx + 1] *= this.collisionDamping;
+                        this.velocities[jdx + 2] *= this.collisionDamping;
+                    }
+                }
                 
                 // Damping to prevent infinite acceleration
                 this.velocities[idx] *= 0.98;
@@ -342,10 +445,19 @@ export class ParticleSystem {
                 }
                 
                 // Update position based on velocity
-                positions[idx] += this.velocities[idx] * frameTime * 60; // Scale by 60 for consistent speed
-                positions[idx + 1] += this.velocities[idx + 1] * frameTime * 60;
-                positions[idx + 2] += this.velocities[idx + 2] * frameTime * 60;
+                positions[idx] += this.velocities[idx] * actualDeltaTime * 60;
+                positions[idx + 1] += this.velocities[idx + 1] * actualDeltaTime * 60;
+                positions[idx + 2] += this.velocities[idx + 2] * actualDeltaTime * 60;
+                
+                // Update color based on lifetime (fade effect)
+                const lifetimeFactor = 1.0 - this.lifetimes[i];
+                const colorIdx = i * 3;
+                colors[colorIdx] = this.baseColor.r * lifetimeFactor;
+                colors[colorIdx + 1] = this.baseColor.g * lifetimeFactor;
+                colors[colorIdx + 2] = this.baseColor.b * lifetimeFactor;
             }
+            
+            this.geometry.attributes.color.needsUpdate = true;
             
             this.geometry.attributes.position.needsUpdate = true;
 
