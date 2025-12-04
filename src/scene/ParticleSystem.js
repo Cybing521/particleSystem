@@ -27,6 +27,15 @@ export class ParticleSystem {
         this.currentShape = 'sphere'; // Track current shape for UI sync
         this.shapeChangeCallback = null;
         
+        // Color and opacity
+        this.baseOpacity = 0.8; // Base opacity (0.0 to 1.0)
+        
+        // Distribution mode
+        this.distributionMode = 'uniform'; // 'uniform', 'random', 'clustered'
+        
+        // Gesture control service reference (set externally)
+        this.gestureControlService = null;
+        
         // Diffusion parameters
         this.diffusionSpeed = 0.02; // Base speed of particle movement
         this.attractionStrength = 0.001; // Strength of attraction to target shape
@@ -167,7 +176,7 @@ export class ParticleSystem {
             blending: THREE.NormalBlending,
             depthWrite: false,
             transparent: true,
-            opacity: 0.8, // Increased opacity for better visibility
+            opacity: this.baseOpacity, // Use baseOpacity
             // Enable size variation per particle (requires custom shader, but we'll update size dynamically)
         });
 
@@ -178,9 +187,21 @@ export class ParticleSystem {
     calculateShapePositions(shape, array) {
         for (let i = 0; i < this.count; i++) {
             let x, y, z;
+            
+            // Apply distribution mode
+            let randomFactor = 1.0;
+            if (this.distributionMode === 'random') {
+                randomFactor = 0.5 + Math.random() * 1.5; // 0.5 to 2.0
+            } else if (this.distributionMode === 'clustered') {
+                // Create clusters: use a few random centers
+                const clusterCenters = 5;
+                const clusterIndex = Math.floor(Math.random() * clusterCenters);
+                const clusterOffset = (Math.random() - 0.5) * 0.3; // Small offset for clustering
+                randomFactor = 0.7 + clusterOffset;
+            }
 
             if (shape === 'sphere') {
-                const r = 2 * Math.cbrt(Math.random());
+                const r = 2 * Math.cbrt(Math.random()) * randomFactor;
                 const theta = Math.random() * 2 * Math.PI;
                 const phi = Math.acos(2 * Math.random() - 1);
                 x = r * Math.sin(phi) * Math.cos(theta);
@@ -189,34 +210,37 @@ export class ParticleSystem {
             } else if (shape === 'torus') {
                 const u = Math.random() * Math.PI * 2;
                 const v = Math.random() * Math.PI * 2;
-                const R = 1.5;
-                const r = 0.5;
+                const R = 1.5 * randomFactor;
+                const r = 0.5 * randomFactor;
                 x = (R + r * Math.cos(v)) * Math.cos(u);
                 y = (R + r * Math.cos(v)) * Math.sin(u);
                 z = r * Math.sin(v);
                 // Add some volume
-                x += (Math.random() - 0.5) * 0.2;
-                y += (Math.random() - 0.5) * 0.2;
-                z += (Math.random() - 0.5) * 0.2;
+                const volumeFactor = this.distributionMode === 'clustered' ? 0.15 : 0.2;
+                x += (Math.random() - 0.5) * volumeFactor;
+                y += (Math.random() - 0.5) * volumeFactor;
+                z += (Math.random() - 0.5) * volumeFactor;
             } else if (shape === 'heart') {
                 // Heart shape using parametric equations with volume
                 const t = Math.random() * Math.PI * 2;
-                const scale = 0.12; // Scale factor for heart size
+                const scale = 0.12 * randomFactor; // Scale factor for heart size
                 // Heart parametric equations (standard heart curve)
                 const heartX = 16 * Math.pow(Math.sin(t), 3);
                 const heartY = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
                 // Add volume by varying the depth based on position
-                const depth = (Math.random() - 0.5) * 0.3; // Volume variation
+                const depthVariation = this.distributionMode === 'clustered' ? 0.2 : 0.3;
+                const depth = (Math.random() - 0.5) * depthVariation; // Volume variation
                 x = scale * heartX;
                 y = scale * heartY;
                 z = depth;
                 // Add some random variation for more natural distribution
-                x += (Math.random() - 0.5) * 0.05;
-                y += (Math.random() - 0.5) * 0.05;
-                z += (Math.random() - 0.5) * 0.05;
+                const variationFactor = this.distributionMode === 'clustered' ? 0.03 : 0.05;
+                x += (Math.random() - 0.5) * variationFactor;
+                y += (Math.random() - 0.5) * variationFactor;
+                z += (Math.random() - 0.5) * variationFactor;
             } else {
                 // Default to sphere if unknown shape
-                const r = 2 * Math.cbrt(Math.random());
+                const r = 2 * Math.cbrt(Math.random()) * randomFactor;
                 const theta = Math.random() * 2 * Math.PI;
                 const phi = Math.acos(2 * Math.random() - 1);
                 x = r * Math.sin(phi) * Math.cos(theta);
@@ -260,8 +284,12 @@ export class ParticleSystem {
         return this.currentShape;
     }
 
-    setColor(hexColor) {
+    setColor(hexColor, opacity = null) {
         this.baseColor.set(hexColor);
+        if (opacity !== null) {
+            this.baseOpacity = Math.max(0, Math.min(1, opacity));
+            this.material.opacity = this.baseOpacity;
+        }
         const colors = this.geometry.attributes.color.array;
         const color = new THREE.Color();
 
@@ -272,6 +300,42 @@ export class ParticleSystem {
             colors[i * 3 + 2] = color.b;
         }
         this.geometry.attributes.color.needsUpdate = true;
+    }
+    
+    setOpacity(opacity) {
+        this.baseOpacity = Math.max(0, Math.min(1, opacity));
+        this.material.opacity = this.baseOpacity;
+    }
+    
+    getOpacity() {
+        return this.baseOpacity;
+    }
+    
+    setParticleCount(count) {
+        const newCount = Math.max(this.minParticleCount, Math.min(this.maxParticleCount, Math.floor(count)));
+        if (newCount !== this.count) {
+            this.createParticleSystem(newCount);
+        }
+    }
+    
+    getParticleCount() {
+        return this.count;
+    }
+    
+    setDistributionMode(mode) {
+        if (['uniform', 'random', 'clustered'].includes(mode)) {
+            this.distributionMode = mode;
+            // Recalculate positions with new distribution
+            this.calculateShapePositions(this.currentShape, this.targetPositions);
+        }
+    }
+    
+    getDistributionMode() {
+        return this.distributionMode;
+    }
+    
+    setGestureControlService(service) {
+        this.gestureControlService = service;
     }
 
     updateParticleColor(colorObj, index) {
@@ -380,9 +444,12 @@ export class ParticleSystem {
             }
 
             // Smooth rotation (降低灵敏度：从0.1/0.12降到0.06/0.08)
-            this.particles.rotation.y += (targetRotY - this.particles.rotation.y) * 0.06;
-            this.particles.rotation.x += (targetRotX - this.particles.rotation.x) * 0.06;
-            this.particles.rotation.z += (targetRotZ - this.particles.rotation.z) * 0.08;
+            // Check if rotation gesture is enabled
+            if (!this.gestureControlService || this.gestureControlService.isGestureEnabled('rotation')) {
+                this.particles.rotation.y += (targetRotY - this.particles.rotation.y) * 0.06;
+                this.particles.rotation.x += (targetRotX - this.particles.rotation.x) * 0.06;
+                this.particles.rotation.z += (targetRotZ - this.particles.rotation.z) * 0.08;
+            }
 
             // Auto rotation if no hand
             if (!leftHand && !rightHand && gestureState > 0.95 && fingers === 0) {
@@ -391,13 +458,17 @@ export class ParticleSystem {
 
             // Finger Shape Switching (from right hand)
             // 1: Sphere, 2: Heart, 3: Torus
-            if (shapeFingers === 1) this.setShape('sphere');
-            if (shapeFingers === 2) this.setShape('heart');
-            if (shapeFingers === 3) this.setShape('torus');
+            // Check if shape gesture is enabled
+            if ((!this.gestureControlService || this.gestureControlService.isGestureEnabled('shape'))) {
+                if (shapeFingers === 1) this.setShape('sphere');
+                if (shapeFingers === 2) this.setShape('heart');
+                if (shapeFingers === 3) this.setShape('torus');
+            }
 
             // Enhanced Breathing Effect - size and opacity pulse together
             const breathSize = Math.sin(time * 2.0) * 0.01; // Size breathing effect
-            const breathOpacity = Math.sin(time * 1.8) * 0.15 + 0.85; // Opacity breathing: 0.7 to 1.0
+            // Use baseOpacity for breathing effect, but keep it within reasonable range
+            const breathOpacity = this.baseOpacity * (Math.sin(time * 1.8) * 0.15 + 0.85); // Opacity breathing
             this.material.size = this.baseSize + breathSize;
             this.material.opacity = breathOpacity; // Breathing opacity for depth
 
@@ -553,10 +624,12 @@ export class ParticleSystem {
             this.material.size = avgSize;
 
             // Gesture Interaction: Scale (降低灵敏度：从0.15降到0.08)
-            const currentScale = this.particles.scale.x;
-            const newScale = currentScale + (targetScale - currentScale) * 0.08;
-
-            this.particles.scale.set(newScale, newScale, newScale);
+            // Check if scale gesture is enabled
+            if (!this.gestureControlService || this.gestureControlService.isGestureEnabled('scale')) {
+                const currentScale = this.particles.scale.x;
+                const newScale = currentScale + (targetScale - currentScale) * 0.08;
+                this.particles.scale.set(newScale, newScale, newScale);
+            }
         }
     }
 

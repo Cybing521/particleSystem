@@ -1,5 +1,6 @@
 import { GestureCalibrationService } from '../services/GestureCalibrationService.js';
 import { TutorialService } from '../services/TutorialService.js';
+import { GestureControlService } from '../services/GestureControlService.js';
 
 export class UIManager {
     constructor(particleSystem, handTracker, gestureService = null) {
@@ -11,6 +12,7 @@ export class UIManager {
         // Initialize services
         this.calibrationService = new GestureCalibrationService(handTracker);
         this.tutorialService = new TutorialService(handTracker, particleSystem);
+        this.gestureControlService = new GestureControlService(handTracker);
         
         // Load saved calibration
         this.calibrationService.loadFromLocalStorage();
@@ -50,6 +52,27 @@ export class UIManager {
                     <div class="color-picker-wrapper">
                         <input type="color" id="color-picker" value="#222222">
                     </div>
+                    <div class="opacity-control">
+                        <label>透明度: <span id="opacity-value">80</span>%</label>
+                        <input type="range" id="opacity-slider" min="0" max="100" step="1" value="80">
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <h3>粒子数量</h3>
+                    <div class="particle-count-control">
+                        <label>数量: <span id="particle-count-value">5000</span></label>
+                        <input type="range" id="particle-count-slider" min="1000" max="10000" step="500" value="5000">
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <h3>分布方式</h3>
+                    <div class="distribution-selector">
+                        <button data-distribution="uniform" class="active">均匀</button>
+                        <button data-distribution="random">随机</button>
+                        <button data-distribution="clustered">聚集</button>
+                    </div>
                 </div>
 
                 <div class="control-group">
@@ -69,6 +92,24 @@ export class UIManager {
                     </button>
                 </div>
 
+                <div class="control-group">
+                    <h3>手势控制</h3>
+                    <div class="gesture-controls">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="gesture-rotation" checked>
+                            <span>旋转控制</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="gesture-scale" checked>
+                            <span>缩放控制</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="gesture-shape" checked>
+                            <span>形状切换</span>
+                        </label>
+                    </div>
+                </div>
+                
                 <div class="control-group button-row">
                     <button id="calibration-btn">校准</button>
                     <button id="tutorial-btn">教程</button>
@@ -252,8 +293,75 @@ export class UIManager {
 
         // Color Picker
         const colorPicker = this.container.querySelector('#color-picker');
+        const opacitySlider = this.container.querySelector('#opacity-slider');
+        const opacityValue = this.container.querySelector('#opacity-value');
+        
         colorPicker.addEventListener('input', (e) => {
-            this.particleSystem.setColor(e.target.value);
+            const opacity = parseFloat(opacitySlider.value) / 100;
+            this.particleSystem.setColor(e.target.value, opacity);
+        });
+        
+        opacitySlider.addEventListener('input', (e) => {
+            const opacity = parseFloat(e.target.value) / 100;
+            opacityValue.textContent = e.target.value;
+            this.particleSystem.setOpacity(opacity);
+        });
+        
+        // Initialize opacity from particle system
+        const currentOpacity = this.particleSystem.getOpacity();
+        opacitySlider.value = Math.round(currentOpacity * 100);
+        opacityValue.textContent = Math.round(currentOpacity * 100);
+        
+        // Particle Count Slider
+        const particleCountSlider = this.container.querySelector('#particle-count-slider');
+        const particleCountValue = this.container.querySelector('#particle-count-value');
+        
+        particleCountSlider.addEventListener('input', (e) => {
+            const count = parseInt(e.target.value);
+            particleCountValue.textContent = count;
+            this.particleSystem.setParticleCount(count);
+        });
+        
+        // Initialize particle count from particle system
+        const currentCount = this.particleSystem.getParticleCount();
+        particleCountSlider.value = currentCount;
+        particleCountValue.textContent = currentCount;
+        
+        // Distribution Mode Selector
+        const distributionButtons = this.container.querySelectorAll('.distribution-selector button');
+        distributionButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                distributionButtons.forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                const mode = e.target.dataset.distribution;
+                this.particleSystem.setDistributionMode(mode);
+            });
+        });
+        
+        // Initialize distribution mode
+        const currentMode = this.particleSystem.getDistributionMode();
+        const activeDistBtn = Array.from(distributionButtons).find(btn => btn.dataset.distribution === currentMode);
+        if (activeDistBtn) {
+            distributionButtons.forEach(b => b.classList.remove('active'));
+            activeDistBtn.classList.add('active');
+        }
+        
+        // Gesture Control Checkboxes
+        const gestureCheckboxes = {
+            rotation: this.container.querySelector('#gesture-rotation'),
+            scale: this.container.querySelector('#gesture-scale'),
+            shape: this.container.querySelector('#gesture-shape')
+        };
+        
+        // Load saved gesture states
+        const gestureStates = this.gestureControlService.getAllGestures();
+        Object.keys(gestureCheckboxes).forEach(key => {
+            if (gestureCheckboxes[key]) {
+                gestureCheckboxes[key].checked = gestureStates[key];
+                gestureCheckboxes[key].addEventListener('change', (e) => {
+                    this.gestureControlService.setGestureEnabled(key, e.target.checked);
+                });
+            }
         });
 
         // Model Upload

@@ -49,18 +49,24 @@ gestureService.initialize().then(success => {
 // UI Manager
 const uiManager = new UIManager(particleSystem, handTracker, gestureService);
 
+// Set gesture control service reference in particle system
+particleSystem.setGestureControlService(uiManager.gestureControlService);
+
 // Data Visualization
 const dataVisualization = new DataVisualization(handTracker, particleSystem);
 
 // Set up callbacks for UI synchronization
 handTracker.setFingerChangeCallback((fingers) => {
     // When finger count changes, update shape if needed
-    if (fingers === 1) {
-        particleSystem.setShape('sphere');
-    } else if (fingers === 2) {
-        particleSystem.setShape('heart');
-    } else if (fingers === 3) {
-        particleSystem.setShape('torus');
+    // Check if shape gesture is enabled before switching
+    if (uiManager.gestureControlService.isGestureEnabled('shape')) {
+        if (fingers === 1) {
+            particleSystem.setShape('sphere');
+        } else if (fingers === 2) {
+            particleSystem.setShape('heart');
+        } else if (fingers === 3) {
+            particleSystem.setShape('torus');
+        }
     }
 });
 
