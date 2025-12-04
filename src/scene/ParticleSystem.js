@@ -5,9 +5,9 @@ export class ParticleSystem {
     constructor(scene) {
         this.scene = scene;
         this.particles = null;
-        this.baseCount = 5000; // 基础粒子数量
-        this.count = 5000; // 当前粒子数量（会根据性能动态调整）
-        this.minVisibleCount = 3000; // 最小可见粒子数量（防止粒子过少）
+        this.baseCount = 3000; // 基础粒子数量（降低初始数量以提升性能）
+        this.count = 3000; // 当前粒子数量（会根据性能动态调整）
+        this.minVisibleCount = 2000; // 最小可见粒子数量（防止粒子过少）
         this.geometry = null;
         this.material = null;
         
@@ -43,8 +43,6 @@ export class ParticleSystem {
         
         // Physics parameters
         this.gravity = -0.0005; // Gravity strength (negative = downward)
-        this.collisionRadius = 0.05; // Collision detection radius
-        this.collisionDamping = 0.8; // Collision damping factor
         this.forceFieldStrength = 0.0002; // Force field strength
         this.forceFieldRadius = 2.0; // Force field radius
         this.forceFieldCenter = new THREE.Vector3(0, 0, 0); // Force field center
@@ -66,14 +64,6 @@ export class ParticleSystem {
         this.velocityPool = null;
         this.colorPool = null;
         this.maxPoolSize = this.maxParticleCount;
-        
-        // 空间分区优化：使用网格分区加速碰撞检测
-        this.spatialGrid = null;
-        this.gridSize = 0.5; // 网格单元大小（根据碰撞半径调整）
-        this.gridWidth = 0;
-        this.gridHeight = 0;
-        this.gridDepth = 0;
-        this.useSpatialGrid = true; // 是否启用空间分区
 
         this.init();
     }
@@ -229,23 +219,36 @@ export class ParticleSystem {
                 y += (Math.random() - 0.5) * volumeFactor;
                 z += (Math.random() - 0.5) * volumeFactor;
             } else if (shape === 'heart') {
-                // Heart shape using parametric equations with volume
+                // Heart shape with 3D volume filling for a solid, dispersed heart
+                // Use a combination of parametric surface and volume filling
                 const t = Math.random() * Math.PI * 2;
-                const scale = 0.12 * randomFactor; // Scale factor for heart size
+                const scale = 0.15 * randomFactor; // Slightly larger scale for better visibility
+                
                 // Heart parametric equations (standard heart curve)
                 const heartX = 16 * Math.pow(Math.sin(t), 3);
                 const heartY = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
-                // Add volume by varying the depth based on position
-                const depthVariation = this.distributionMode === 'clustered' ? 0.2 : 0.3;
-                const depth = (Math.random() - 0.5) * depthVariation; // Volume variation
-                x = scale * heartX;
-                y = scale * heartY;
-                z = depth;
-                // Add some random variation for more natural distribution
-                const variationFactor = this.distributionMode === 'clustered' ? 0.03 : 0.05;
-                x += (Math.random() - 0.5) * variationFactor;
-                y += (Math.random() - 0.5) * variationFactor;
-                z += (Math.random() - 0.5) * variationFactor;
+                
+                // Create 3D volume by adding radial offset from the heart surface
+                // This creates a solid heart instead of just a surface
+                const radialOffset = Math.random(); // 0 to 1, controls distance from surface
+                const volumeRadius = 0.4; // Maximum distance from surface for volume filling
+                
+                // Calculate surface normal direction (simplified)
+                const angle = Math.random() * Math.PI * 2; // Random angle around the surface
+                const offsetX = Math.cos(angle) * radialOffset * volumeRadius;
+                const offsetY = Math.sin(angle) * radialOffset * volumeRadius;
+                const offsetZ = (Math.random() - 0.5) * volumeRadius * 0.6; // Z-axis volume
+                
+                // Apply volume offset to create solid heart
+                x = scale * heartX + offsetX;
+                y = scale * heartY + offsetY;
+                z = offsetZ;
+                
+                // Add additional random dispersion for more natural, less dense distribution
+                const dispersionFactor = this.distributionMode === 'clustered' ? 0.08 : 0.12;
+                x += (Math.random() - 0.5) * dispersionFactor;
+                y += (Math.random() - 0.5) * dispersionFactor;
+                z += (Math.random() - 0.5) * dispersionFactor * 0.8;
             } else {
                 // Default to sphere if unknown shape
                 const r = 2 * Math.cbrt(Math.random()) * randomFactor;
@@ -473,22 +476,13 @@ export class ParticleSystem {
                 if (shapeFingers === 3) this.setShape('torus');
             }
 
-            // Enhanced Breathing Effect - size and opacity pulse together
-            const breathSize = Math.sin(time * 2.0) * 0.01; // Size breathing effect
-            // Use baseOpacity for breathing effect, but keep it within reasonable range
-            const breathOpacity = this.baseOpacity * (Math.sin(time * 1.8) * 0.15 + 0.85); // Opacity breathing
-            this.material.size = this.baseSize + breathSize;
-            this.material.opacity = breathOpacity; // Breathing opacity for depth
+            // 移除breathing效果以避免闪烁，使用固定值
+            this.material.opacity = this.baseOpacity;
 
             // Free diffusion with attraction to target shape + Physics
             const positions = this.geometry.attributes.position.array;
             const colors = this.geometry.attributes.color.array;
             const actualDeltaTime = 0.016; // Approximate frame time (60fps)
-            
-            // 重建空间分区网格（每帧更新，或可以降低频率）
-            if (this.useSpatialGrid && this.frameCounter % 5 === 0) {
-                this.buildSpatialGrid();
-            }
 
             for (let i = 0; i < this.count; i++) {
                 const idx = i * 3;
@@ -539,98 +533,6 @@ export class ParticleSystem {
                 this.velocities[idx + 1] += (attractionY + forceFieldY + gravityForce + (Math.random() - 0.5) * this.randomness) * actualDeltaTime * 60;
                 this.velocities[idx + 2] += (attractionZ + forceFieldZ + (Math.random() - 0.5) * this.randomness) * actualDeltaTime * 60;
                 
-                // Collision detection with nearby particles (optimized with spatial grid)
-                if (this.useSpatialGrid && this.spatialGrid) {
-                    // Use spatial grid for efficient collision detection
-                    const nearbyParticles = this.getNearbyParticles(px, py, pz, i);
-                    const checkedPairs = new Set(); // 避免重复检查
-                    
-                    for (const j of nearbyParticles) {
-                        if (j <= i) continue; // Avoid duplicate checks
-                        const pairKey = i < j ? `${i},${j}` : `${j},${i}`;
-                        if (checkedPairs.has(pairKey)) continue;
-                        checkedPairs.add(pairKey);
-                        
-                        const jdx = j * 3;
-                        const px2 = positions[jdx];
-                        const py2 = positions[jdx + 1];
-                        const pz2 = positions[jdx + 2];
-                        
-                        const colDx = px - px2;
-                        const colDy = py - py2;
-                        const colDz = pz - pz2;
-                        const colDistSq = colDx * colDx + colDy * colDy + colDz * colDz;
-                        const colRadiusSq = this.collisionRadius * this.collisionRadius;
-                        
-                        if (colDistSq < colRadiusSq && colDistSq > 0.000001) {
-                            const colDist = Math.sqrt(colDistSq);
-                            // Simple collision response
-                            const overlap = this.collisionRadius - colDist;
-                            const normalX = colDx / colDist;
-                            const normalY = colDy / colDist;
-                            const normalZ = colDz / colDist;
-                            
-                            // Separate particles
-                            const separation = overlap * 0.5;
-                            positions[idx] += normalX * separation;
-                            positions[idx + 1] += normalY * separation;
-                            positions[idx + 2] += normalZ * separation;
-                            positions[jdx] -= normalX * separation;
-                            positions[jdx + 1] -= normalY * separation;
-                            positions[jdx + 2] -= normalZ * separation;
-                            
-                            // Apply collision damping
-                            this.velocities[idx] *= this.collisionDamping;
-                            this.velocities[idx + 1] *= this.collisionDamping;
-                            this.velocities[idx + 2] *= this.collisionDamping;
-                            this.velocities[jdx] *= this.collisionDamping;
-                            this.velocities[jdx + 1] *= this.collisionDamping;
-                            this.velocities[jdx + 2] *= this.collisionDamping;
-                        }
-                    }
-                } else {
-                    // Fallback: simple nearby particle check (for compatibility)
-                    // Bug fix: jdx should be j * 3, not i * 3
-                    for (let j = i + 1; j < Math.min(i + 10, this.count); j++) {
-                        const jdx = j * 3;
-                        const px2 = positions[jdx];
-                        const py2 = positions[jdx + 1];
-                        const pz2 = positions[jdx + 2];
-                        
-                        const colDx = px - px2;
-                        const colDy = py - py2;
-                        const colDz = pz - pz2;
-                        const colDistSq = colDx * colDx + colDy * colDy + colDz * colDz;
-                        const colRadiusSq = this.collisionRadius * this.collisionRadius;
-                        
-                        if (colDistSq < colRadiusSq && colDistSq > 0.000001) {
-                            const colDist = Math.sqrt(colDistSq);
-                            // Simple collision response
-                            const overlap = this.collisionRadius - colDist;
-                            const normalX = colDx / colDist;
-                            const normalY = colDy / colDist;
-                            const normalZ = colDz / colDist;
-                            
-                            // Separate particles
-                            const separation = overlap * 0.5;
-                            positions[idx] += normalX * separation;
-                            positions[idx + 1] += normalY * separation;
-                            positions[idx + 2] += normalZ * separation;
-                            positions[jdx] -= normalX * separation;
-                            positions[jdx + 1] -= normalY * separation;
-                            positions[jdx + 2] -= normalZ * separation;
-                            
-                            // Apply collision damping
-                            this.velocities[idx] *= this.collisionDamping;
-                            this.velocities[idx + 1] *= this.collisionDamping;
-                            this.velocities[idx + 2] *= this.collisionDamping;
-                            this.velocities[jdx] *= this.collisionDamping;
-                            this.velocities[jdx + 1] *= this.collisionDamping;
-                            this.velocities[jdx + 2] *= this.collisionDamping;
-                        }
-                    }
-                }
-                
                 // Damping to prevent infinite acceleration
                 this.velocities[idx] *= 0.98;
                 this.velocities[idx + 1] *= 0.98;
@@ -660,16 +562,11 @@ export class ParticleSystem {
                 positions[idx + 1] += this.velocities[idx + 1] * actualDeltaTime * 60;
                 positions[idx + 2] += this.velocities[idx + 2] * actualDeltaTime * 60;
                 
-                // Update color with breathing effect: alternating bright (1.0) and dark (0.75)
-                // Use particle index and time to create wave-like breathing effect
+                // 简化颜色更新，移除breathing效果以避免闪烁
                 const colorIdx = i * 3;
-                const breathingPhase = (i * 0.1 + time * 2.0) % (Math.PI * 2);
-                const breathingFactor = (Math.sin(breathingPhase) + 1.0) / 2.0; // 0 to 1
-                const brightness = 0.75 + breathingFactor * 0.25; // Range: 0.75 to 1.0
-                
-                // Add velocity-based color variation (faster particles are brighter)
-                const velColorBoost = Math.min(normalizedVel * 0.3, 0.3);
-                const finalBrightness = Math.min(brightness * (1.0 + velColorBoost), 1.0);
+                // 使用固定颜色，只保留轻微的速度变化
+                const velColorBoost = Math.min(normalizedVel * 0.1, 0.1); // 降低速度对颜色的影响
+                const finalBrightness = Math.min(1.0 + velColorBoost, 1.0);
                 
                 // Apply brightness to colors
                 colors[colorIdx] = Math.min(this.baseColor.r * finalBrightness, 1.0);
@@ -680,15 +577,8 @@ export class ParticleSystem {
             this.geometry.attributes.color.needsUpdate = true;
             this.geometry.attributes.position.needsUpdate = true;
             
-            // Update material size based on average particle size for dynamic effect
-            // Note: Three.js PointsMaterial doesn't support per-particle sizes natively,
-            // but we can adjust the overall size based on average velocity for a dynamic effect
-            let avgSize = 0;
-            for (let i = 0; i < this.count; i++) {
-                avgSize += this.particleSizes[i];
-            }
-            avgSize /= this.count;
-            this.material.size = avgSize;
+            // 使用固定大小，移除动态大小变化以避免闪烁
+            this.material.size = this.baseSize;
 
             // Gesture Interaction: Scale (降低灵敏度：从0.15降到0.08)
             // Check if scale gesture is enabled
@@ -700,90 +590,6 @@ export class ParticleSystem {
         }
     }
 
-    /**
-     * 空间分区：将粒子分配到网格单元中
-     */
-    buildSpatialGrid() {
-        if (!this.useSpatialGrid) return;
-        
-        const positions = this.geometry.attributes.position.array;
-        const bounds = 5.0; // 粒子系统的边界范围
-        const gridSize = this.gridSize;
-        
-        this.gridWidth = Math.ceil(bounds * 2 / gridSize);
-        this.gridHeight = Math.ceil(bounds * 2 / gridSize);
-        this.gridDepth = Math.ceil(bounds * 2 / gridSize);
-        
-        // 初始化网格（使用Map存储，避免稀疏数组）
-        this.spatialGrid = new Map();
-        
-        // 将粒子分配到网格单元
-        for (let i = 0; i < this.count; i++) {
-            const idx = i * 3;
-            const x = positions[idx];
-            const y = positions[idx + 1];
-            const z = positions[idx + 2];
-            
-            // 计算网格坐标
-            const gx = Math.floor((x + bounds) / gridSize);
-            const gy = Math.floor((y + bounds) / gridSize);
-            const gz = Math.floor((z + bounds) / gridSize);
-            
-            // 确保在有效范围内
-            if (gx >= 0 && gx < this.gridWidth && 
-                gy >= 0 && gy < this.gridHeight && 
-                gz >= 0 && gz < this.gridDepth) {
-                const key = `${gx},${gy},${gz}`;
-                if (!this.spatialGrid.has(key)) {
-                    this.spatialGrid.set(key, []);
-                }
-                this.spatialGrid.get(key).push(i);
-            }
-        }
-    }
-    
-    /**
-     * 获取附近的粒子（使用空间分区）
-     */
-    getNearbyParticles(x, y, z, excludeIndex) {
-        if (!this.useSpatialGrid || !this.spatialGrid) {
-            // Fallback: 返回空数组，使用原来的方法
-            return [];
-        }
-        
-        const bounds = 5.0;
-        const gridSize = this.gridSize;
-        const nearbyParticles = [];
-        
-        // 计算当前粒子所在的网格坐标
-        const gx = Math.floor((x + bounds) / gridSize);
-        const gy = Math.floor((y + bounds) / gridSize);
-        const gz = Math.floor((z + bounds) / gridSize);
-        
-        // 检查当前网格及其26个相邻网格（3x3x3）
-        for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
-                for (let dz = -1; dz <= 1; dz++) {
-                    const nx = gx + dx;
-                    const ny = gy + dy;
-                    const nz = gz + dz;
-                    
-                    if (nx >= 0 && nx < this.gridWidth && 
-                        ny >= 0 && ny < this.gridHeight && 
-                        nz >= 0 && nz < this.gridDepth) {
-                        const key = `${nx},${ny},${nz}`;
-                        const cell = this.spatialGrid.get(key);
-                        if (cell) {
-                            nearbyParticles.push(...cell);
-                        }
-                    }
-                }
-            }
-        }
-        
-        return nearbyParticles;
-    }
-    
     // 自适应粒子数量调整：根据性能动态调整粒子数量
     updateAdaptiveParticleCount() {
         if (this.fpsHistory.length < 10) {
