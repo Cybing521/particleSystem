@@ -66,6 +66,14 @@ export class ParticleSystem {
         this.velocityPool = null;
         this.colorPool = null;
         this.maxPoolSize = this.maxParticleCount;
+        
+        // 空间分区优化：使用网格分区加速碰撞检测
+        this.spatialGrid = null;
+        this.gridSize = 0.5; // 网格单元大小（根据碰撞半径调整）
+        this.gridWidth = 0;
+        this.gridHeight = 0;
+        this.gridDepth = 0;
+        this.useSpatialGrid = true; // 是否启用空间分区
 
         this.init();
     }
@@ -476,6 +484,11 @@ export class ParticleSystem {
             const positions = this.geometry.attributes.position.array;
             const colors = this.geometry.attributes.color.array;
             const actualDeltaTime = 0.016; // Approximate frame time (60fps)
+            
+            // 重建空间分区网格（每帧更新，或可以降低频率）
+            if (this.useSpatialGrid && this.frameCounter % 5 === 0) {
+                this.buildSpatialGrid();
+            }
 
             for (let i = 0; i < this.count; i++) {
                 const idx = i * 3;
@@ -526,41 +539,95 @@ export class ParticleSystem {
                 this.velocities[idx + 1] += (attractionY + forceFieldY + gravityForce + (Math.random() - 0.5) * this.randomness) * actualDeltaTime * 60;
                 this.velocities[idx + 2] += (attractionZ + forceFieldZ + (Math.random() - 0.5) * this.randomness) * actualDeltaTime * 60;
                 
-                // Collision detection with nearby particles (simplified)
-                for (let j = i + 1; j < Math.min(i + 10, this.count); j++) {
-                    const jdx = i * 3;
-                    const px2 = positions[jdx];
-                    const py2 = positions[jdx + 1];
-                    const pz2 = positions[jdx + 2];
+                // Collision detection with nearby particles (optimized with spatial grid)
+                if (this.useSpatialGrid && this.spatialGrid) {
+                    // Use spatial grid for efficient collision detection
+                    const nearbyParticles = this.getNearbyParticles(px, py, pz, i);
+                    const checkedPairs = new Set(); // 避免重复检查
                     
-                    const colDx = px - px2;
-                    const colDy = py - py2;
-                    const colDz = pz - pz2;
-                    const colDist = Math.sqrt(colDx * colDx + colDy * colDy + colDz * colDz);
-                    
-                    if (colDist < this.collisionRadius && colDist > 0.001) {
-                        // Simple collision response
-                        const overlap = this.collisionRadius - colDist;
-                        const normalX = colDx / colDist;
-                        const normalY = colDy / colDist;
-                        const normalZ = colDz / colDist;
+                    for (const j of nearbyParticles) {
+                        if (j <= i) continue; // Avoid duplicate checks
+                        const pairKey = i < j ? `${i},${j}` : `${j},${i}`;
+                        if (checkedPairs.has(pairKey)) continue;
+                        checkedPairs.add(pairKey);
                         
-                        // Separate particles
-                        const separation = overlap * 0.5;
-                        positions[idx] += normalX * separation;
-                        positions[idx + 1] += normalY * separation;
-                        positions[idx + 2] += normalZ * separation;
-                        positions[jdx] -= normalX * separation;
-                        positions[jdx + 1] -= normalY * separation;
-                        positions[jdx + 2] -= normalZ * separation;
+                        const jdx = j * 3;
+                        const px2 = positions[jdx];
+                        const py2 = positions[jdx + 1];
+                        const pz2 = positions[jdx + 2];
                         
-                        // Apply collision damping
-                        this.velocities[idx] *= this.collisionDamping;
-                        this.velocities[idx + 1] *= this.collisionDamping;
-                        this.velocities[idx + 2] *= this.collisionDamping;
-                        this.velocities[jdx] *= this.collisionDamping;
-                        this.velocities[jdx + 1] *= this.collisionDamping;
-                        this.velocities[jdx + 2] *= this.collisionDamping;
+                        const colDx = px - px2;
+                        const colDy = py - py2;
+                        const colDz = pz - pz2;
+                        const colDistSq = colDx * colDx + colDy * colDy + colDz * colDz;
+                        const colRadiusSq = this.collisionRadius * this.collisionRadius;
+                        
+                        if (colDistSq < colRadiusSq && colDistSq > 0.000001) {
+                            const colDist = Math.sqrt(colDistSq);
+                            // Simple collision response
+                            const overlap = this.collisionRadius - colDist;
+                            const normalX = colDx / colDist;
+                            const normalY = colDy / colDist;
+                            const normalZ = colDz / colDist;
+                            
+                            // Separate particles
+                            const separation = overlap * 0.5;
+                            positions[idx] += normalX * separation;
+                            positions[idx + 1] += normalY * separation;
+                            positions[idx + 2] += normalZ * separation;
+                            positions[jdx] -= normalX * separation;
+                            positions[jdx + 1] -= normalY * separation;
+                            positions[jdx + 2] -= normalZ * separation;
+                            
+                            // Apply collision damping
+                            this.velocities[idx] *= this.collisionDamping;
+                            this.velocities[idx + 1] *= this.collisionDamping;
+                            this.velocities[idx + 2] *= this.collisionDamping;
+                            this.velocities[jdx] *= this.collisionDamping;
+                            this.velocities[jdx + 1] *= this.collisionDamping;
+                            this.velocities[jdx + 2] *= this.collisionDamping;
+                        }
+                    }
+                } else {
+                    // Fallback: simple nearby particle check (for compatibility)
+                    // Bug fix: jdx should be j * 3, not i * 3
+                    for (let j = i + 1; j < Math.min(i + 10, this.count); j++) {
+                        const jdx = j * 3;
+                        const px2 = positions[jdx];
+                        const py2 = positions[jdx + 1];
+                        const pz2 = positions[jdx + 2];
+                        
+                        const colDx = px - px2;
+                        const colDy = py - py2;
+                        const colDz = pz - pz2;
+                        const colDistSq = colDx * colDx + colDy * colDy + colDz * colDz;
+                        const colRadiusSq = this.collisionRadius * this.collisionRadius;
+                        
+                        if (colDistSq < colRadiusSq && colDistSq > 0.000001) {
+                            const colDist = Math.sqrt(colDistSq);
+                            // Simple collision response
+                            const overlap = this.collisionRadius - colDist;
+                            const normalX = colDx / colDist;
+                            const normalY = colDy / colDist;
+                            const normalZ = colDz / colDist;
+                            
+                            // Separate particles
+                            const separation = overlap * 0.5;
+                            positions[idx] += normalX * separation;
+                            positions[idx + 1] += normalY * separation;
+                            positions[idx + 2] += normalZ * separation;
+                            positions[jdx] -= normalX * separation;
+                            positions[jdx + 1] -= normalY * separation;
+                            positions[jdx + 2] -= normalZ * separation;
+                            
+                            // Apply collision damping
+                            this.velocities[idx] *= this.collisionDamping;
+                            this.velocities[idx + 1] *= this.collisionDamping;
+                            this.velocities[idx + 2] *= this.collisionDamping;
+                            this.velocities[jdx] *= this.collisionDamping;
+                            this.velocities[jdx + 1] *= this.collisionDamping;
+                            this.velocities[jdx + 2] *= this.collisionDamping;
+                        }
                     }
                 }
                 
@@ -633,6 +700,90 @@ export class ParticleSystem {
         }
     }
 
+    /**
+     * 空间分区：将粒子分配到网格单元中
+     */
+    buildSpatialGrid() {
+        if (!this.useSpatialGrid) return;
+        
+        const positions = this.geometry.attributes.position.array;
+        const bounds = 5.0; // 粒子系统的边界范围
+        const gridSize = this.gridSize;
+        
+        this.gridWidth = Math.ceil(bounds * 2 / gridSize);
+        this.gridHeight = Math.ceil(bounds * 2 / gridSize);
+        this.gridDepth = Math.ceil(bounds * 2 / gridSize);
+        
+        // 初始化网格（使用Map存储，避免稀疏数组）
+        this.spatialGrid = new Map();
+        
+        // 将粒子分配到网格单元
+        for (let i = 0; i < this.count; i++) {
+            const idx = i * 3;
+            const x = positions[idx];
+            const y = positions[idx + 1];
+            const z = positions[idx + 2];
+            
+            // 计算网格坐标
+            const gx = Math.floor((x + bounds) / gridSize);
+            const gy = Math.floor((y + bounds) / gridSize);
+            const gz = Math.floor((z + bounds) / gridSize);
+            
+            // 确保在有效范围内
+            if (gx >= 0 && gx < this.gridWidth && 
+                gy >= 0 && gy < this.gridHeight && 
+                gz >= 0 && gz < this.gridDepth) {
+                const key = `${gx},${gy},${gz}`;
+                if (!this.spatialGrid.has(key)) {
+                    this.spatialGrid.set(key, []);
+                }
+                this.spatialGrid.get(key).push(i);
+            }
+        }
+    }
+    
+    /**
+     * 获取附近的粒子（使用空间分区）
+     */
+    getNearbyParticles(x, y, z, excludeIndex) {
+        if (!this.useSpatialGrid || !this.spatialGrid) {
+            // Fallback: 返回空数组，使用原来的方法
+            return [];
+        }
+        
+        const bounds = 5.0;
+        const gridSize = this.gridSize;
+        const nearbyParticles = [];
+        
+        // 计算当前粒子所在的网格坐标
+        const gx = Math.floor((x + bounds) / gridSize);
+        const gy = Math.floor((y + bounds) / gridSize);
+        const gz = Math.floor((z + bounds) / gridSize);
+        
+        // 检查当前网格及其26个相邻网格（3x3x3）
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dz = -1; dz <= 1; dz++) {
+                    const nx = gx + dx;
+                    const ny = gy + dy;
+                    const nz = gz + dz;
+                    
+                    if (nx >= 0 && nx < this.gridWidth && 
+                        ny >= 0 && ny < this.gridHeight && 
+                        nz >= 0 && nz < this.gridDepth) {
+                        const key = `${nx},${ny},${nz}`;
+                        const cell = this.spatialGrid.get(key);
+                        if (cell) {
+                            nearbyParticles.push(...cell);
+                        }
+                    }
+                }
+            }
+        }
+        
+        return nearbyParticles;
+    }
+    
     // 自适应粒子数量调整：根据性能动态调整粒子数量
     updateAdaptiveParticleCount() {
         if (this.fpsHistory.length < 10) {

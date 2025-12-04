@@ -521,6 +521,13 @@ export class UIManager {
             document.getElementById(id + '-value').textContent = parseFloat(value).toFixed(1);
         };
         
+        // Initialize display values with current settings
+        updateValue('pinch-sens', settings.pinchSensitivity);
+        updateValue('finger-sens', settings.fingerSensitivity);
+        updateValue('pos-sens', settings.positionSensitivity);
+        updateValue('rot-sens', settings.rotationSensitivity);
+        updateValue('smooth', settings.smoothingFactor);
+        
         document.getElementById('pinch-sens').addEventListener('input', (e) => {
             updateValue('pinch-sens', e.target.value);
         });
