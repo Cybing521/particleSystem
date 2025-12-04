@@ -98,13 +98,25 @@ const handAngle = Math.atan2(handVectorY, handVectorX);
 - 使用 OffscreenCanvas 在 Worker 中处理视频帧
 - 注意：需要解决 MediaPipe 在 Worker 中的兼容性问题
 
-**b) 帧率优化**
-- 实现自适应帧率：根据设备性能动态调整检测频率
-- 添加帧跳过机制：低优先级时降低检测频率
+**b) 帧率优化** ✅ **已实现**
+- ✅ 实现自适应帧率：根据设备性能动态调整检测频率
+  - 在 `HandTracker.js` 中实现了 FPS 监控和自适应帧率调整
+  - 每 60 帧更新一次自适应参数，根据平均 FPS 动态调整检测频率
+  - 目标 FPS 为 30，当实际 FPS 低于目标值的 80% 时增加帧跳过率
+- ✅ 添加帧跳过机制：低优先级时降低检测频率
+  - 实现了 `frameSkipRate` 机制，根据性能动态调整（0-2，即每帧到每3帧检测一次）
+  - 当性能较差时自动跳过部分帧的检测，降低 CPU 负载
 
-**c) 内存优化**
-- 优化粒子数量：根据设备性能动态调整粒子数量
-- 实现对象池：重用粒子对象，减少内存分配
+**c) 内存优化** ✅ **已实现**
+- ✅ 优化粒子数量：根据设备性能动态调整粒子数量
+  - 在 `ParticleSystem.js` 中实现了自适应粒子数量调整
+  - 粒子数量可在 1000-10000 之间动态调整，分为 6 个等级
+  - 当 FPS 低于目标值的 70% 时减少粒子数，高于 130% 时增加粒子数
+  - 每 60 帧评估一次性能并自动调整
+- ✅ 实现对象池：重用粒子对象，减少内存分配
+  - 预分配最大尺寸的数组（positionPool, velocityPool, colorPool）
+  - 在调整粒子数量时重用现有数组，减少内存分配和垃圾回收
+  - 使用 `subarray` 方法重用 velocity 数组，避免频繁创建新数组
 
 ### 2.2 功能增强
 
@@ -213,10 +225,147 @@ const handAngle = Math.atan2(handVectorY, handVectorX);
 
 ---
 
+## 4. 手部识别库对比与替代方案
+
+### 4.1 MediaPipe 的优势与局限
+
+**优势：**
+- ✅ 浏览器原生支持，无需额外依赖
+- ✅ 实时性能优秀，针对移动端和Web优化
+- ✅ 易于集成，API简洁
+- ✅ 提供21个手部关键点，精度适中
+- ✅ 支持GPU加速
+
+**局限：**
+- ⚠️ 精度相对有限，复杂手势识别能力较弱
+- ⚠️ 对遮挡和光照条件敏感
+- ⚠️ 双手检测需要额外配置
+- ⚠️ 深度信息（Z轴）精度有限
+
+### 4.2 更精确的替代方案
+
+如果需要实现更精确的手部识别，以下库值得考虑：
+
+#### **a) MediaPipe Hands (升级版)**
+- **精度提升**：使用更先进的模型（如BlazePalm + Hand Landmark）
+- **优势**：保持MediaPipe的易用性，但精度更高
+- **适用场景**：需要更高精度但仍需浏览器支持的项目
+- **参考**：[MediaPipe Hands Solution](https://developers.google.com/mediapipe/solutions/vision/hand_landmarker)
+
+#### **b) TensorFlow.js Hand Pose Detection**
+- **特点**：基于TensorFlow.js，可在浏览器中运行
+- **精度**：提供多种模型（Lite、Full），Full模型精度更高
+- **优势**：
+  - 支持多种手部检测模型（MediaPipe、MoveNet等）
+  - 可自定义模型训练
+  - 更好的双手支持
+- **适用场景**：需要更高精度且愿意使用TensorFlow生态的项目
+- **参考**：[TensorFlow.js Hand Pose](https://github.com/tensorflow/tfjs-models/tree/master/hand-pose-detection)
+
+#### **c) OpenPose (需要后端服务)**
+- **特点**：专业级人体姿态估计，包括手部关键点
+- **精度**：非常高，可检测21个手部关键点 + 全身姿态
+- **优势**：
+  - 极高的精度和稳定性
+  - 支持多人、多手检测
+  - 对遮挡和复杂场景鲁棒性强
+- **劣势**：
+  - 需要后端服务（Python/C++）
+  - 计算资源需求高
+  - 不适合纯前端项目
+- **适用场景**：需要极高精度的专业应用，可接受后端部署
+- **参考**：[OpenPose GitHub](https://github.com/CMU-Perceptual-Computing-Lab/openpose)
+
+#### **d) MediaPipe Holistic (升级方案)**
+- **特点**：MediaPipe的增强版，同时检测手部、面部和身体姿态
+- **精度**：比基础MediaPipe Hands更高
+- **优势**：
+  - 仍支持浏览器运行
+  - 提供更丰富的姿态信息
+  - 更好的多手支持
+- **适用场景**：需要手部+身体姿态的完整解决方案
+- **参考**：[MediaPipe Holistic](https://google.github.io/mediapipe/solutions/holistic.html)
+
+#### **e) YOLOv8 Hand Detection (需要后端)**
+- **特点**：基于YOLO的目标检测，专门针对手部优化
+- **精度**：检测精度高，但关键点精度取决于后续处理
+- **优势**：
+  - 快速检测手部位置
+  - 对复杂背景鲁棒
+- **劣势**：
+  - 需要后端服务
+  - 关键点检测需要额外模型
+- **适用场景**：需要快速手部检测，可接受后端部署
+
+#### **f) Hand3D / HandPose (研究级)**
+- **特点**：专注于3D手部姿态估计的研究项目
+- **精度**：极高，可提供精确的3D手部模型
+- **优势**：
+  - 最精确的3D手部重建
+  - 支持复杂手势识别
+- **劣势**：
+  - 计算资源需求极高
+  - 主要面向研究，集成复杂
+- **适用场景**：研究项目或需要极高精度的专业应用
+
+### 4.3 推荐方案对比
+
+| 库名 | 精度 | 实时性 | 浏览器支持 | 集成难度 | 推荐指数 |
+|------|------|--------|-----------|---------|---------|
+| MediaPipe (当前) | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ✅ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| MediaPipe Holistic | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ✅ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| TensorFlow.js Hand Pose | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ✅ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
+| OpenPose | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ❌ | ⭐⭐ | ⭐⭐⭐ |
+| YOLOv8 Hand | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ❌ | ⭐⭐ | ⭐⭐⭐ |
+
+### 4.4 迁移建议
+
+**如果追求更高精度但仍需浏览器支持：**
+1. **首选**：升级到 **MediaPipe Holistic** 或 **TensorFlow.js Hand Pose Detection**
+   - 保持浏览器兼容性
+   - 精度提升明显
+   - 迁移成本较低
+
+**如果需要极高精度且可接受后端：**
+2. **推荐**：使用 **OpenPose** 或 **MediaPipe** 后端服务
+   - 通过 WebSocket 或 REST API 与前端通信
+   - 精度最高
+   - 需要后端部署和维护
+
+**混合方案：**
+3. **建议**：前端使用 MediaPipe 做实时预览，后端使用 OpenPose 做精确分析
+   - 兼顾实时性和精度
+   - 适合需要精确手势识别的应用
+
+### 4.5 精度提升技巧（无需更换库）
+
+在继续使用 MediaPipe 的情况下，也可以通过以下方式提升精度：
+
+1. **数据预处理**：
+   - 图像增强（对比度、亮度调整）
+   - 背景去除
+   - 手部区域裁剪和放大
+
+2. **后处理优化**：
+   - 使用卡尔曼滤波平滑关键点
+   - 实现手势状态机，减少误识别
+   - 添加手势置信度阈值
+
+3. **多帧融合**：
+   - 使用时间窗口平均关键点位置
+   - 实现手势序列识别而非单帧识别
+
+4. **模型配置优化**：
+   - 使用更高精度的模型（如 `full` 而非 `lite`）
+   - 调整检测阈值和置信度参数
+
+---
+
 ## 参考资料
 
 - [MediaPipe 官方文档](https://developers.google.com/mediapipe)
 - [MediaPipe Hand Landmarker](https://developers.google.com/mediapipe/solutions/vision/hand_landmarker)
 - [Three.js 文档](https://threejs.org/docs/)
 - [WebRTC getUserMedia API](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)
+
 

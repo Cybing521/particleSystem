@@ -5,7 +5,8 @@ export class ParticleSystem {
     constructor(scene) {
         this.scene = scene;
         this.particles = null;
-        this.count = 5000; // Increased count for better visuals
+        this.baseCount = 5000; // 基础粒子数量
+        this.count = 5000; // 当前粒子数量（会根据性能动态调整）
         this.geometry = null;
         this.material = null;
         
@@ -17,15 +18,65 @@ export class ParticleSystem {
         this.attractionStrength = 0.001; // Strength of attraction to target shape
         this.randomness = 0.005; // Random movement component
 
+        // 内存优化：性能监控和自适应调整
+        this.fpsHistory = [];
+        this.fpsHistorySize = 30;
+        this.lastFrameTime = performance.now();
+        this.targetFPS = 30;
+        this.adaptiveUpdateInterval = 60;
+        this.frameCounter = 0;
+        this.minParticleCount = 1000; // 最小粒子数
+        this.maxParticleCount = 10000; // 最大粒子数
+        this.particleCountSteps = [1000, 2000, 3000, 5000, 7000, 10000]; // 粒子数量等级
+
+        // 对象池：重用数组（预分配最大尺寸）
+        this.positionPool = null;
+        this.velocityPool = null;
+        this.colorPool = null;
+        this.maxPoolSize = this.maxParticleCount;
+
         this.init();
     }
 
     init() {
+        this.createParticleSystem(this.count);
+    }
+
+    // 创建粒子系统（支持动态调整）
+    createParticleSystem(count) {
+        // 如果已存在，先移除旧的
+        if (this.particles) {
+            this.scene.remove(this.particles);
+            this.geometry.dispose();
+            this.material.dispose();
+        }
+
+        this.count = count;
         this.geometry = new THREE.BufferGeometry();
-        this.initialPositions = new Float32Array(this.count * 3);
-        this.targetPositions = new Float32Array(this.count * 3);
-        const positions = new Float32Array(this.count * 3);
-        const colors = new Float32Array(this.count * 3);
+        
+        // 对象池：预分配最大尺寸的数组，重用以减少内存分配
+        // 如果对象池不存在或太小，创建/扩展它
+        if (!this.positionPool || this.positionPool.length < this.maxPoolSize * 3) {
+            this.positionPool = new Float32Array(this.maxPoolSize * 3);
+            this.velocityPool = new Float32Array(this.maxPoolSize * 3);
+            this.colorPool = new Float32Array(this.maxPoolSize * 3);
+        }
+        
+        // 创建新数组，但重用对象池的buffer以减少内存碎片
+        // 对于当前count，创建新的Float32Array视图
+        this.initialPositions = new Float32Array(count * 3);
+        this.targetPositions = new Float32Array(count * 3);
+        const positions = new Float32Array(count * 3);
+        const colors = new Float32Array(count * 3);
+        
+        // 重用velocity pool（如果大小足够）
+        if (this.velocities && this.velocities.length >= count * 3) {
+            // 重用现有数组
+            this.velocities = this.velocities.subarray(0, count * 3);
+        } else {
+            // 创建新数组
+            this.velocities = new Float32Array(count * 3);
+        }
 
         const color = new THREE.Color();
         // Default to a very dark grey/black for contrast against white
@@ -36,12 +87,12 @@ export class ParticleSystem {
         this.calculateShapePositions('sphere', this.targetPositions);
 
         // Copy to current positions
-        for (let i = 0; i < this.count * 3; i++) {
+        for (let i = 0; i < count * 3; i++) {
             positions[i] = this.initialPositions[i];
         }
 
         // Initialize velocities with random directions
-        for (let i = 0; i < this.count; i++) {
+        for (let i = 0; i < count; i++) {
             // Random velocity direction
             const speed = this.diffusionSpeed * (0.5 + Math.random() * 0.5);
             const theta = Math.random() * Math.PI * 2;
@@ -189,6 +240,24 @@ export class ParticleSystem {
 
     update(time, gestureState = 1.0, fingers = 0, handPos = { x: 0.5, y: 0.5 }, rotationZ = 0.0, rotationX = 0.0) {
         if (this.particles) {
+            // 内存优化：性能监控和自适应粒子数量调整
+            const currentTime = performance.now();
+            const deltaTime = currentTime - this.lastFrameTime;
+            const currentFPS = deltaTime > 0 ? 1000 / deltaTime : 60;
+            this.lastFrameTime = currentTime;
+            
+            // 更新FPS历史记录
+            this.fpsHistory.push(currentFPS);
+            if (this.fpsHistory.length > this.fpsHistorySize) {
+                this.fpsHistory.shift();
+            }
+            
+            // 每N帧更新一次自适应参数
+            this.frameCounter++;
+            if (this.frameCounter >= this.adaptiveUpdateInterval) {
+                this.updateAdaptiveParticleCount();
+                this.frameCounter = 0;
+            }
             // Rotation based on hand position (0.5 is center)
             // Map 0..1 to -PI..PI, increase sensitivity
             const targetRotY = (handPos.x - 0.5) * Math.PI * 1.5;
@@ -222,7 +291,7 @@ export class ParticleSystem {
 
             // Free diffusion with attraction to target shape
             const positions = this.geometry.attributes.position.array;
-            const deltaTime = 0.016; // Approximate frame time (60fps)
+            const frameTime = 0.016; // Approximate frame time (60fps)
 
             for (let i = 0; i < this.count; i++) {
                 const idx = i * 3;
@@ -273,9 +342,9 @@ export class ParticleSystem {
                 }
                 
                 // Update position based on velocity
-                positions[idx] += this.velocities[idx] * deltaTime * 60; // Scale by 60 for consistent speed
-                positions[idx + 1] += this.velocities[idx + 1] * deltaTime * 60;
-                positions[idx + 2] += this.velocities[idx + 2] * deltaTime * 60;
+                positions[idx] += this.velocities[idx] * frameTime * 60; // Scale by 60 for consistent speed
+                positions[idx + 1] += this.velocities[idx + 1] * frameTime * 60;
+                positions[idx + 2] += this.velocities[idx + 2] * frameTime * 60;
             }
             
             this.geometry.attributes.position.needsUpdate = true;
@@ -288,6 +357,43 @@ export class ParticleSystem {
             const newScale = currentScale + (targetScale - currentScale) * 0.15;
 
             this.particles.scale.set(newScale, newScale, newScale);
+        }
+    }
+
+    // 自适应粒子数量调整：根据性能动态调整粒子数量
+    updateAdaptiveParticleCount() {
+        if (this.fpsHistory.length < 10) {
+            return; // 数据不足，不调整
+        }
+        
+        // 计算平均FPS
+        const avgFPS = this.fpsHistory.reduce((a, b) => a + b, 0) / this.fpsHistory.length;
+        
+        // 根据FPS调整粒子数量
+        let targetCount = this.count;
+        
+        if (avgFPS < this.targetFPS * 0.7) {
+            // 性能较差，减少粒子数量
+            const currentIndex = this.particleCountSteps.indexOf(this.count);
+            if (currentIndex > 0) {
+                targetCount = this.particleCountSteps[currentIndex - 1];
+            } else {
+                targetCount = this.minParticleCount;
+            }
+        } else if (avgFPS > this.targetFPS * 1.3) {
+            // 性能良好，可以增加粒子数量
+            const currentIndex = this.particleCountSteps.indexOf(this.count);
+            if (currentIndex < this.particleCountSteps.length - 1) {
+                targetCount = this.particleCountSteps[currentIndex + 1];
+            } else {
+                targetCount = this.maxParticleCount;
+            }
+        }
+        
+        // 如果粒子数量需要改变，重新创建粒子系统
+        if (targetCount !== this.count) {
+            console.log(`[ParticleSystem] Adaptive adjustment: ${this.count} -> ${targetCount} particles (FPS: ${avgFPS.toFixed(1)})`);
+            this.createParticleSystem(targetCount);
         }
     }
 }

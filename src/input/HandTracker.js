@@ -22,6 +22,16 @@ export class HandTracker {
         this.lastToggleTime = 0;
         this.toggleCallback = null;
 
+        // 帧率优化：自适应帧率控制
+        this.frameSkipCounter = 0;
+        this.frameSkipRate = 0; // 0 = 每帧都检测, 1 = 每2帧检测一次, 2 = 每3帧检测一次
+        this.fpsHistory = [];
+        this.fpsHistorySize = 30; // 记录最近30帧的FPS
+        this.lastFrameTime = performance.now();
+        this.targetFPS = 30; // 目标FPS
+        this.adaptiveUpdateInterval = 60; // 每60帧更新一次自适应参数
+        this.frameCounter = 0;
+
         // Don't auto-init, wait for user to enable camera
     }
 
@@ -131,11 +141,40 @@ export class HandTracker {
             return;
         }
         
+        // 帧率优化：计算当前FPS并更新自适应参数
+        const currentTime = performance.now();
+        const deltaTime = currentTime - this.lastFrameTime;
+        const currentFPS = deltaTime > 0 ? 1000 / deltaTime : 60;
+        this.lastFrameTime = currentTime;
+        
+        // 更新FPS历史记录
+        this.fpsHistory.push(currentFPS);
+        if (this.fpsHistory.length > this.fpsHistorySize) {
+            this.fpsHistory.shift();
+        }
+        
+        // 每N帧更新一次自适应参数
+        this.frameCounter++;
+        if (this.frameCounter >= this.adaptiveUpdateInterval) {
+            this.updateAdaptiveFrameRate();
+            this.frameCounter = 0;
+        }
+        
+        // 帧跳过机制：根据frameSkipRate决定是否跳过当前帧
+        if (this.frameSkipCounter < this.frameSkipRate) {
+            this.frameSkipCounter++;
+            this.predicting = false;
+            if (this.isTracking) {
+                requestAnimationFrame(() => this.predict());
+            }
+            return;
+        }
+        
+        // 重置跳过计数器
+        this.frameSkipCounter = 0;
         this.predicting = true;
         
         if (this.video && this.video.readyState >= 2 && this.handLandmarker) {
-            const currentTime = performance.now();
-            
             if (this.video.currentTime !== this.lastVideoTime) {
                 this.lastVideoTime = this.video.currentTime;
                 
@@ -156,6 +195,31 @@ export class HandTracker {
         
         if (this.isTracking) {
             requestAnimationFrame(() => this.predict());
+        }
+    }
+
+    // 自适应帧率更新：根据性能动态调整检测频率
+    updateAdaptiveFrameRate() {
+        if (this.fpsHistory.length < 10) {
+            return; // 数据不足，不调整
+        }
+        
+        // 计算平均FPS
+        const avgFPS = this.fpsHistory.reduce((a, b) => a + b, 0) / this.fpsHistory.length;
+        
+        // 根据FPS调整帧跳过率
+        // 如果FPS低于目标值，增加跳过率以降低检测频率
+        if (avgFPS < this.targetFPS * 0.8) {
+            // 性能较差，增加跳过率（最多每3帧检测一次）
+            this.frameSkipRate = Math.min(2, this.frameSkipRate + 1);
+        } else if (avgFPS > this.targetFPS * 1.2) {
+            // 性能良好，减少跳过率（尝试每帧都检测）
+            this.frameSkipRate = Math.max(0, this.frameSkipRate - 1);
+        }
+        
+        // 调试输出（可选）
+        if (Math.random() < 0.01) {
+            console.log(`[HandTracker] Adaptive FPS: ${avgFPS.toFixed(1)}, Skip Rate: ${this.frameSkipRate}`);
         }
     }
 
