@@ -303,4 +303,15 @@ export class UIManager {
             cameraBtn.classList.remove('active');
         }
     }
+    
+    updateShapeSelection(shape) {
+        const buttons = this.container.querySelectorAll('.shape-selector button');
+        buttons.forEach(btn => {
+            if (btn.dataset.shape === shape) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
 }

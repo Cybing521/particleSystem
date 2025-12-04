@@ -29,6 +29,21 @@ const handTracker = new HandTracker();
 // UI Manager
 const uiManager = new UIManager(particleSystem, handTracker);
 
+// Set up callbacks for UI synchronization
+handTracker.setFingerChangeCallback((fingers) => {
+    // When finger count changes, update shape if needed
+    if (fingers === 1) {
+        particleSystem.setShape('sphere');
+    } else if (fingers === 3) {
+        particleSystem.setShape('torus');
+    }
+});
+
+particleSystem.setShapeChangeCallback((shape) => {
+    // When shape changes, update UI
+    uiManager.updateShapeSelection(shape);
+});
+
 // Resize Handler
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -44,6 +59,12 @@ function animate() {
   requestAnimationFrame(animate);
 
   const elapsedTime = clock.getElapsedTime();
+  
+  // Get dual hand data
+  const leftHand = handTracker.getLeftHand();
+  const rightHand = handTracker.getRightHand();
+  
+  // Legacy single hand support (for backward compatibility)
   const gestureState = handTracker.getGestureState();
   const fingers = handTracker.getFingers();
   const position = handTracker.getPosition();
@@ -53,17 +74,22 @@ function animate() {
   // Debug: Log gesture data periodically
   frameCount++;
   if (frameCount % 60 === 0) { // Every 60 frames (~1 second at 60fps)
-    console.log('[Main] Gesture data to ParticleSystem:', {
-      gestureState: gestureState.toFixed(2),
-      fingers: fingers,
-      position: { x: position.x.toFixed(2), y: position.y.toFixed(2) },
-      rotationZ: rotationZ.toFixed(2),
-      rotationX: rotationX.toFixed(2),
+    console.log('[Main] Dual hand data to ParticleSystem:', {
+      leftHand: {
+        position: { x: leftHand.position.x.toFixed(2), y: leftHand.position.y.toFixed(2) },
+        rotationZ: leftHand.rotationZ.toFixed(2),
+        rotationX: leftHand.rotationX.toFixed(2)
+      },
+      rightHand: {
+        gestureState: rightHand.gestureState.toFixed(2),
+        fingers: rightHand.fingers
+      },
       isTracking: handTracker.isCameraEnabled()
     });
   }
 
-  particleSystem.update(elapsedTime, gestureState, fingers, position, rotationZ, rotationX);
+  // Pass dual hand data to particle system
+  particleSystem.update(elapsedTime, leftHand, rightHand, gestureState, fingers, position, rotationZ, rotationX);
 
   renderer.render(scene, camera);
 }

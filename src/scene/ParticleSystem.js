@@ -5,10 +5,13 @@ export class ParticleSystem {
     constructor(scene) {
         this.scene = scene;
         this.particles = null;
+        this.glowParticles = null; // Glow effect layer
         this.baseCount = 5000; // 基础粒子数量
         this.count = 5000; // 当前粒子数量（会根据性能动态调整）
         this.geometry = null;
         this.material = null;
+        this.glowGeometry = null;
+        this.glowMaterial = null;
         
         // Particle velocities for free diffusion
         this.velocities = new Float32Array(this.count * 3);
@@ -16,7 +19,19 @@ export class ParticleSystem {
         // Particle physics properties
         this.masses = new Float32Array(this.count); // Particle masses
         this.lifetimes = new Float32Array(this.count); // Particle lifetimes (0-1)
-        this.maxLifetime = 10.0; // Maximum lifetime in seconds
+        this.maxLifetime = 8.0; // Maximum lifetime in seconds (reduced for more frequent resets)
+        
+        // Visual effects properties
+        this.particleSizes = new Float32Array(this.count); // Dynamic particle sizes
+        this.baseSize = 0.03; // Base particle size
+        this.sizeVariation = 0.03; // Size variation based on velocity (increased)
+        this.trailEnabled = false; // Trail effect (can be enabled if needed)
+        this.glowIntensity = 0.5; // Glow effect intensity (increased)
+        this.lifetimeColorIntensity = 0.5; // Lifetime color variation intensity
+        
+        // Current shape tracking
+        this.currentShape = 'sphere'; // Track current shape for UI sync
+        this.shapeChangeCallback = null;
         
         // Diffusion parameters
         this.diffusionSpeed = 0.02; // Base speed of particle movement
@@ -56,13 +71,18 @@ export class ParticleSystem {
         this.createParticleSystem(this.count);
     }
 
-    // 创建粒子系统（支持动态调整）
+        // 创建粒子系统（支持动态调整）
     createParticleSystem(count) {
         // 如果已存在，先移除旧的
         if (this.particles) {
             this.scene.remove(this.particles);
             this.geometry.dispose();
             this.material.dispose();
+        }
+        if (this.glowParticles) {
+            this.scene.remove(this.glowParticles);
+            this.glowGeometry.dispose();
+            this.glowMaterial.dispose();
         }
 
         this.count = count;
@@ -103,6 +123,13 @@ export class ParticleSystem {
         } else {
             this.lifetimes = this.lifetimes.subarray(0, count);
         }
+        
+        // Initialize particle sizes array
+        if (!this.particleSizes || this.particleSizes.length < count) {
+            this.particleSizes = new Float32Array(count);
+        } else {
+            this.particleSizes = this.particleSizes.subarray(0, count);
+        }
 
         const color = new THREE.Color();
         // Default to a very dark grey/black for contrast against white
@@ -140,22 +167,69 @@ export class ParticleSystem {
 
         this.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         this.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        
+        // Initialize particle sizes
+        for (let i = 0; i < count; i++) {
+            this.particleSizes[i] = this.baseSize;
+        }
 
         const sprite = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png');
 
         this.material = new THREE.PointsMaterial({
-            size: 0.03, // Smaller, more refined particles
+            size: this.baseSize, // Base size, will be updated dynamically
+            sizeAttenuation: true, // Enable size attenuation for depth
             vertexColors: true,
             map: sprite,
             // Normal blending works better for dark particles on white background
             blending: THREE.NormalBlending,
             depthWrite: false,
             transparent: true,
-            opacity: 0.6
+            opacity: 0.6,
+            // Enable size variation per particle (requires custom shader, but we'll update size dynamically)
         });
 
         this.particles = new THREE.Points(this.geometry, this.material);
         this.scene.add(this.particles);
+        
+        // Create glow layer for enhanced visual effects
+        this.createGlowLayer(count);
+    }
+    
+    createGlowLayer(count) {
+        // Create a separate layer for glow effect
+        this.glowGeometry = new THREE.BufferGeometry();
+        const glowPositions = new Float32Array(count * 3);
+        const glowColors = new Float32Array(count * 3);
+        
+        // Copy positions and colors from main particles
+        for (let i = 0; i < count; i++) {
+            const idx = i * 3;
+            glowPositions[idx] = this.initialPositions[idx];
+            glowPositions[idx + 1] = this.initialPositions[idx + 1];
+            glowPositions[idx + 2] = this.initialPositions[idx + 2];
+            glowColors[idx] = this.baseColor.r;
+            glowColors[idx + 1] = this.baseColor.g;
+            glowColors[idx + 2] = this.baseColor.b;
+        }
+        
+        this.glowGeometry.setAttribute('position', new THREE.BufferAttribute(glowPositions, 3));
+        this.glowGeometry.setAttribute('color', new THREE.BufferAttribute(glowColors, 3));
+        
+        const glowSprite = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png');
+        
+        this.glowMaterial = new THREE.PointsMaterial({
+            size: this.baseSize * 4.0, // Much larger size for visible glow
+            sizeAttenuation: true,
+            vertexColors: true,
+            map: glowSprite,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            transparent: true,
+            opacity: 0.4 // More visible glow
+        });
+        
+        this.glowParticles = new THREE.Points(this.glowGeometry, this.glowMaterial);
+        this.scene.add(this.glowParticles);
     }
 
     calculateShapePositions(shape, array) {
@@ -198,16 +272,33 @@ export class ParticleSystem {
     }
 
     setShape(shape) {
-        this.calculateShapePositions(shape, this.targetPositions);
-        
-        // Add some initial velocity boost when shape changes for more dynamic effect
-        for (let i = 0; i < this.count; i++) {
-            const idx = i * 3;
-            const boost = 0.03;
-            this.velocities[idx] += (Math.random() - 0.5) * boost;
-            this.velocities[idx + 1] += (Math.random() - 0.5) * boost;
-            this.velocities[idx + 2] += (Math.random() - 0.5) * boost;
+        // Only update if shape actually changed
+        if (shape !== this.currentShape) {
+            this.currentShape = shape;
+            this.calculateShapePositions(shape, this.targetPositions);
+            
+            // Notify callback if shape changed
+            if (this.shapeChangeCallback) {
+                this.shapeChangeCallback(shape);
+            }
+            
+            // Add some initial velocity boost when shape changes for more dynamic effect
+            for (let i = 0; i < this.count; i++) {
+                const idx = i * 3;
+                const boost = 0.03;
+                this.velocities[idx] += (Math.random() - 0.5) * boost;
+                this.velocities[idx + 1] += (Math.random() - 0.5) * boost;
+                this.velocities[idx + 2] += (Math.random() - 0.5) * boost;
+            }
         }
+    }
+    
+    setShapeChangeCallback(callback) {
+        this.shapeChangeCallback = callback;
+    }
+    
+    getCurrentShape() {
+        return this.currentShape;
     }
 
     setColor(hexColor) {
@@ -268,7 +359,7 @@ export class ParticleSystem {
         });
     }
 
-    update(time, gestureState = 1.0, fingers = 0, handPos = { x: 0.5, y: 0.5 }, rotationZ = 0.0, rotationX = 0.0) {
+    update(time, leftHand = null, rightHand = null, gestureState = 1.0, fingers = 0, handPos = { x: 0.5, y: 0.5 }, rotationZ = 0.0, rotationX = 0.0) {
         if (this.particles) {
             // 内存优化：性能监控和自适应粒子数量调整
             const currentTime = performance.now();
@@ -288,14 +379,46 @@ export class ParticleSystem {
                 this.updateAdaptiveParticleCount();
                 this.frameCounter = 0;
             }
-            // Rotation based on hand position (0.5 is center)
-            // Map 0..1 to -PI..PI, increase sensitivity
-            const targetRotY = (handPos.x - 0.5) * Math.PI * 1.5;
-            const targetRotX = (handPos.y - 0.5) * Math.PI * 1.5;
             
-            // Z-axis rotation based on hand tilt (left/right rotation)
-            // Map -1..1 to -PI..PI for more visible effect
-            const targetRotZ = rotationZ * Math.PI;
+            // Dual hand control: Left hand controls position and rotation, Right hand controls shape and scale
+            let targetRotY, targetRotX, targetRotZ;
+            let targetScale;
+            let shapeFingers;
+            
+            if (leftHand && rightHand) {
+                // Both hands detected - use dual hand control
+                // Left hand: position and rotation
+                targetRotY = (leftHand.position.x - 0.5) * Math.PI * 1.5;
+                targetRotX = (leftHand.position.y - 0.5) * Math.PI * 1.5;
+                targetRotZ = leftHand.rotationZ * Math.PI;
+                
+                // Right hand: shape and scale
+                shapeFingers = rightHand.fingers;
+                targetScale = 0.3 + (rightHand.gestureState * 0.7);
+            } else if (leftHand) {
+                // Only left hand detected - use for rotation, default scale
+                targetRotY = (leftHand.position.x - 0.5) * Math.PI * 1.5;
+                targetRotX = (leftHand.position.y - 0.5) * Math.PI * 1.5;
+                targetRotZ = leftHand.rotationZ * Math.PI;
+                shapeFingers = 0;
+                targetScale = 0.5; // Default scale
+            } else if (rightHand) {
+                // Only right hand detected - use for both rotation and scale
+                // When only one hand is present, HandTracker provides both leftHand and rightHand data
+                // But if only rightHand is available here, use it for both functions
+                targetRotY = (rightHand.position.x - 0.5) * Math.PI * 1.5;
+                targetRotX = (rightHand.position.y - 0.5) * Math.PI * 1.5;
+                targetRotZ = rotationZ * Math.PI;
+                shapeFingers = rightHand.fingers;
+                targetScale = 0.3 + (rightHand.gestureState * 0.7);
+            } else {
+                // No hands or legacy single hand mode
+                targetRotY = (handPos.x - 0.5) * Math.PI * 1.5;
+                targetRotX = (handPos.y - 0.5) * Math.PI * 1.5;
+                targetRotZ = rotationZ * Math.PI;
+                shapeFingers = fingers;
+                targetScale = 0.3 + (gestureState * 0.7);
+            }
 
             // Smooth rotation with increased responsiveness
             this.particles.rotation.y += (targetRotY - this.particles.rotation.y) * 0.1;
@@ -303,19 +426,20 @@ export class ParticleSystem {
             this.particles.rotation.z += (targetRotZ - this.particles.rotation.z) * 0.12;
 
             // Auto rotation if no hand
-            if (gestureState > 0.95 && fingers === 0) {
+            if (!leftHand && !rightHand && gestureState > 0.95 && fingers === 0) {
                 this.particles.rotation.y += 0.002;
             }
 
-            // Finger Shape Switching
+            // Finger Shape Switching (from right hand)
             // 1: Sphere, 3: Torus
-            // Add debounce or check if stable to avoid flickering
-            if (fingers === 1) this.setShape('sphere');
-            if (fingers === 3) this.setShape('torus');
+            if (shapeFingers === 1) this.setShape('sphere');
+            if (shapeFingers === 3) this.setShape('torus');
 
-            // Breathing Effect
-            const breath = Math.sin(time * 2.0) * 0.005;
-            this.material.size = 0.03 + breath;
+            // Breathing Effect with enhanced glow
+            const breath = Math.sin(time * 2.0) * 0.008; // Increased breath effect
+            const glowPulse = Math.sin(time * 1.5) * 0.15 + 0.85; // Pulse between 0.7 and 1.0
+            this.material.size = this.baseSize + breath;
+            this.material.opacity = 0.7 + glowPulse * 0.2; // More visible pulsing opacity
 
             // Free diffusion with attraction to target shape + Physics
             const positions = this.geometry.attributes.position.array;
@@ -328,19 +452,21 @@ export class ParticleSystem {
                 // Update particle lifetime
                 this.lifetimes[i] += actualDeltaTime / this.maxLifetime;
                 if (this.lifetimes[i] >= 1.0) {
-                    // Reset particle when lifetime expires
+                    // Reset particle when lifetime expires - create visible rebirth effect
                     this.lifetimes[i] = 0;
                     // Reset position to initial
                     positions[idx] = this.initialPositions[idx];
                     positions[idx + 1] = this.initialPositions[idx + 1];
                     positions[idx + 2] = this.initialPositions[idx + 2];
-                    // Reset velocity
-                    const speed = this.diffusionSpeed * (0.5 + Math.random() * 0.5);
+                    // Reset velocity with initial boost for visibility
+                    const speed = this.diffusionSpeed * (0.8 + Math.random() * 0.4); // Slightly faster initial speed
                     const theta = Math.random() * Math.PI * 2;
                     const phi = Math.acos(2 * Math.random() - 1);
                     this.velocities[idx] = speed * Math.sin(phi) * Math.cos(theta);
                     this.velocities[idx + 1] = speed * Math.sin(phi) * Math.sin(theta);
                     this.velocities[idx + 2] = speed * Math.cos(phi);
+                    // Reset mass for variation
+                    this.masses[i] = 0.5 + Math.random() * 0.5;
                 }
                 
                 // Current position
@@ -444,27 +570,80 @@ export class ParticleSystem {
                     this.velocities[idx + 2] *= scale;
                 }
                 
+                // Dynamic particle size based on velocity (trail effect)
+                // Faster particles appear larger (motion blur effect)
+                const normalizedVel = Math.min(velMag / (this.diffusionSpeed * 2), 1.0);
+                this.particleSizes[i] = this.baseSize + normalizedVel * this.sizeVariation;
+                
                 // Update position based on velocity
                 positions[idx] += this.velocities[idx] * actualDeltaTime * 60;
                 positions[idx + 1] += this.velocities[idx + 1] * actualDeltaTime * 60;
                 positions[idx + 2] += this.velocities[idx + 2] * actualDeltaTime * 60;
                 
-                // Update color based on lifetime (fade effect)
-                const lifetimeFactor = 1.0 - this.lifetimes[i];
+                // Update color based on lifetime and velocity (enhanced visual effects)
+                const lifetimeFactor = 1.0 - this.lifetimes[i]; // 0 (new) to 1 (old)
                 const colorIdx = i * 3;
-                colors[colorIdx] = this.baseColor.r * lifetimeFactor;
-                colors[colorIdx + 1] = this.baseColor.g * lifetimeFactor;
-                colors[colorIdx + 2] = this.baseColor.b * lifetimeFactor;
+                
+                // Add velocity-based color variation (faster particles are brighter)
+                const velColorBoost = Math.min(normalizedVel * 0.5, 0.5); // Increased boost
+                
+                // Enhanced lifetime effect: particles fade from bright to dark as they age
+                // New particles are brighter, old particles are darker
+                const lifetimeBrightness = 0.3 + lifetimeFactor * 0.7; // Range: 0.3 to 1.0
+                const finalBrightness = lifetimeBrightness * (1.0 + velColorBoost);
+                
+                // Enhanced glow effect: faster particles have more intense colors
+                // Also apply lifetime-based color variation
+                colors[colorIdx] = Math.min(this.baseColor.r * finalBrightness, 1.0);
+                colors[colorIdx + 1] = Math.min(this.baseColor.g * finalBrightness, 1.0);
+                colors[colorIdx + 2] = Math.min(this.baseColor.b * finalBrightness, 1.0);
             }
             
             this.geometry.attributes.color.needsUpdate = true;
-            
             this.geometry.attributes.position.needsUpdate = true;
+            
+            // Update material size based on average particle size for dynamic effect
+            // Note: Three.js PointsMaterial doesn't support per-particle sizes natively,
+            // but we can adjust the overall size based on average velocity for a dynamic effect
+            let avgSize = 0;
+            for (let i = 0; i < this.count; i++) {
+                avgSize += this.particleSizes[i];
+            }
+            avgSize /= this.count;
+            this.material.size = avgSize;
+            
+            // Update glow layer to follow main particles
+            if (this.glowParticles && this.glowGeometry) {
+                const glowPositions = this.glowGeometry.attributes.position.array;
+                const glowColors = this.glowGeometry.attributes.color.array;
+                
+                for (let i = 0; i < this.count; i++) {
+                    const idx = i * 3;
+                    glowPositions[idx] = positions[idx];
+                    glowPositions[idx + 1] = positions[idx + 1];
+                    glowPositions[idx + 2] = positions[idx + 2];
+                    
+                    // Enhanced glow colors: much brighter and more saturated
+                    // Glow is more intense for new particles (based on lifetime)
+                    const lifetimeFactor = 1.0 - this.lifetimes[i];
+                    const glowIntensity = 0.5 + lifetimeFactor * 0.5; // New particles have stronger glow
+                    
+                    // Glow colors are much brighter and more saturated
+                    glowColors[idx] = Math.min(colors[idx] * 2.5 * glowIntensity, 1.0);
+                    glowColors[idx + 1] = Math.min(colors[idx + 1] * 2.5 * glowIntensity, 1.0);
+                    glowColors[idx + 2] = Math.min(colors[idx + 2] * 2.5 * glowIntensity, 1.0);
+                }
+                
+                this.glowGeometry.attributes.position.needsUpdate = true;
+                this.glowGeometry.attributes.color.needsUpdate = true;
+                
+                // Update glow size dynamically - make it more visible
+                this.glowMaterial.size = avgSize * 4.0; // Increased from 2.5 to 4.0
+                // Enhanced pulsing glow with more variation
+                this.glowMaterial.opacity = 0.3 + Math.sin(time * 1.5) * 0.15; // Range: 0.15 to 0.45
+            }
 
-            // Gesture Interaction: Scale
-            // Invert pinch: closed (0) = small, open (1) = large
-            // Increase scale range for more visible effect
-            const targetScale = 0.3 + (gestureState * 0.7);
+            // Gesture Interaction: Scale (from right hand or legacy gestureState)
             const currentScale = this.particles.scale.x;
             const newScale = currentScale + (targetScale - currentScale) * 0.15;
 

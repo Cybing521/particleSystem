@@ -10,12 +10,34 @@ export class HandTracker {
         this.isTracking = false;
         this.predicting = false;
 
-        // 0 = Closed, 1 = Open
-        this.gestureState = 1.0;
+        // Left hand data (controls position and rotation)
+        this.leftHand = {
+            gestureState: 1.0,
+            position: { x: 0.5, y: 0.5 },
+            rotationZ: 0.0, // Left (-1) to Right (+1)
+            rotationX: 0.0  // Backward (-1) to Forward (+1)
+        };
         
-        // Rotation values: -1 to 1
-        this.rotationZ = 0.0; // Left (-1) to Right (+1)
-        this.rotationX = 0.0; // Backward (-1) to Forward (+1)
+        // Right hand data (controls shape and scale)
+        this.rightHand = {
+            gestureState: 1.0,
+            fingers: 0,
+            position: { x: 0.5, y: 0.5 }
+        };
+        
+        // Finger detection state machine for stability
+        this.fingerStateHistory = [];
+        this.fingerStateHistorySize = 10; // Keep last 10 frames
+        this.fingerStateThreshold = 7; // Need 7/10 frames to confirm change
+        this.currentStableFingers = 0;
+        this.fingerChangeCallback = null;
+
+        // Legacy single hand support (for backward compatibility)
+        this.gestureState = 1.0;
+        this.rotationZ = 0.0;
+        this.rotationX = 0.0;
+        this.fingers = 0;
+        this.position = { x: 0.5, y: 0.5 };
 
         // Gesture toggle state
         this.gestureToggleCooldown = 0;
@@ -37,6 +59,10 @@ export class HandTracker {
 
     setToggleCallback(callback) {
         this.toggleCallback = callback;
+    }
+    
+    setFingerChangeCallback(callback) {
+        this.fingerChangeCallback = callback;
     }
 
     async init() {
@@ -87,6 +113,18 @@ export class HandTracker {
         }
         
         // Reset gesture state
+        this.leftHand = {
+            gestureState: 1.0,
+            position: { x: 0.5, y: 0.5 },
+            rotationZ: 0.0,
+            rotationX: 0.0
+        };
+        this.rightHand = {
+            gestureState: 1.0,
+            fingers: 0,
+            position: { x: 0.5, y: 0.5 }
+        };
+        // Legacy support
         this.gestureState = 1.0;
         this.rotationZ = 0.0;
         this.rotationX = 0.0;
@@ -104,14 +142,14 @@ export class HandTracker {
                 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm'
             );
 
-            // Initialize Hand Landmarker (Full Model for high precision)
+            // Initialize Hand Landmarker (Full Model for high precision, support both hands)
             this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
                 baseOptions: {
                     modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
                     delegate: "GPU"
                 },
                 runningMode: 'VIDEO',
-                numHands: 1,
+                numHands: 2, // Enable dual hand detection
                 minHandDetectionConfidence: 0.5,
                 minHandPresenceConfidence: 0.5,
                 minTrackingConfidence: 0.5
@@ -243,30 +281,49 @@ export class HandTracker {
                     });
                 }
                 
-                // Process hand results
-                let processedData = null;
+                // Process hand results - support dual hands
+                let leftHandData = null;
+                let rightHandData = null;
+                
                 if (handResults.landmarks && handResults.landmarks.length > 0) {
-                    const landmarks = handResults.landmarks[0];
-                    processedData = this.analyzeHand(landmarks);
-                    
-                    // Debug: Log processed data periodically
-                    if (Math.random() < 0.05) { // 5% chance to log
-                        console.log('[HandTracker] Processed hand data:', {
-                            pinch: processedData.pinch.toFixed(2),
-                            fingers: processedData.fingers,
-                            position: { x: processedData.position.x.toFixed(2), y: processedData.position.y.toFixed(2) },
-                            rotationZ: processedData.rotationZ.toFixed(2),
-                            rotationX: processedData.rotationX.toFixed(2)
-                        });
-                    }
-                } else {
-                    // Debug: Log when no hand detected
-                    if (Math.random() < 0.02) { // 2% chance to log
-                        console.log('[HandTracker] No hand detected');
+                    if (handResults.landmarks.length === 2) {
+                        // Two hands detected - identify left and right
+                        const identified = this.identifyHands(handResults.landmarks[0], handResults.landmarks[1]);
+                        leftHandData = this.analyzeHand(identified.left, 'left');
+                        rightHandData = this.analyzeHand(identified.right, 'right');
+                        
+                        // Debug: Log dual hand data periodically
+                        if (Math.random() < 0.05) {
+                            console.log('[HandTracker] Dual hands detected:', {
+                                left: {
+                                    position: { x: leftHandData.position.x.toFixed(2), y: leftHandData.position.y.toFixed(2) },
+                                    rotationZ: leftHandData.rotationZ.toFixed(2)
+                                },
+                                right: {
+                                    fingers: rightHandData.fingers,
+                                    gestureState: rightHandData.pinch.toFixed(2)
+                                }
+                            });
+                        }
+                    } else if (handResults.landmarks.length === 1) {
+                        // Single hand detected - provide both rotation and scale control
+                        const handData = this.analyzeHand(handResults.landmarks[0]);
+                        // When only one hand is present, use it for both left and right hand functions
+                        // This allows rotation and scale control simultaneously
+                        leftHandData = {
+                            position: handData.position,
+                            rotationZ: handData.rotationZ,
+                            rotationX: handData.rotationX
+                        };
+                        rightHandData = {
+                            pinch: handData.pinch,
+                            fingers: handData.fingers,
+                            position: handData.position
+                        };
                     }
                 }
                 
-                this.processResults(processedData);
+                this.processDualHandResults(leftHandData, rightHandData);
             } catch (error) {
                 console.error('[HandTracker] Detection error:', error);
                 this.processResults(null);
@@ -280,7 +337,27 @@ export class HandTracker {
         }
     }
 
-    analyzeHand(landmarks) {
+    identifyHands(landmarks1, landmarks2) {
+        // Calculate center position for each hand
+        const center1 = {
+            x: (landmarks1[0].x + landmarks1[9].x) / 2,
+            y: (landmarks1[0].y + landmarks1[9].y) / 2
+        };
+        const center2 = {
+            x: (landmarks2[0].x + landmarks2[9].x) / 2,
+            y: (landmarks2[0].y + landmarks2[9].y) / 2
+        };
+        
+        // Left hand is typically on the left side of the screen (x < 0.5)
+        // Right hand is typically on the right side (x > 0.5)
+        if (center1.x < center2.x) {
+            return { left: landmarks1, right: landmarks2 };
+        } else {
+            return { left: landmarks2, right: landmarks1 };
+        }
+    }
+
+    analyzeHand(landmarks, handType = 'unknown') {
         // 1. Pinch Detection (Thumb tip 4 - Index tip 8)
         const thumbTip = landmarks[4];
         const indexTip = landmarks[8];
@@ -301,19 +378,21 @@ export class HandTracker {
             y: (landmarks[0].y + landmarks[9].y) / 2
         };
 
-        // 3. Finger Counting
+        // 3. Finger Counting (Improved detection with better thresholds)
         // Tips: 8, 12, 16, 20. PIP joints: 6, 10, 14, 18.
         // Finger is open if Tip.y < PIP.y (assuming hand is upright)
+        // Use a threshold to make detection more stable
+        const fingerThreshold = 0.02; // Threshold for finger detection (more lenient)
         let fingers = 0;
 
-        // Index
-        if (landmarks[8].y < landmarks[6].y) fingers++;
+        // Index - check if tip is significantly above PIP joint
+        if (landmarks[8].y < landmarks[6].y - fingerThreshold) fingers++;
         // Middle
-        if (landmarks[12].y < landmarks[10].y) fingers++;
+        if (landmarks[12].y < landmarks[10].y - fingerThreshold) fingers++;
         // Ring
-        if (landmarks[16].y < landmarks[14].y) fingers++;
+        if (landmarks[16].y < landmarks[14].y - fingerThreshold) fingers++;
         // Pinky
-        if (landmarks[20].y < landmarks[18].y) fingers++;
+        if (landmarks[20].y < landmarks[18].y - fingerThreshold) fingers++;
 
         // 4. Hand Rotation Detection
         // Left/Right Rotation (Roll): Calculate hand tilt angle
@@ -388,62 +467,124 @@ export class HandTracker {
         }
     }
 
-    processResults(data) {
+    processDualHandResults(leftHandData, rightHandData) {
         const currentTime = Date.now();
         
-        if (data) {
-            // Smooth the pinch value with faster response
-            this.gestureState += (data.pinch - this.gestureState) * 0.2;
-
-            this.fingers = data.fingers;
-            this.position = data.position;
+        // Process left hand data (position and rotation)
+        if (leftHandData) {
+            // Left hand: position and rotation
+            this.leftHand.position.x += (leftHandData.position.x - this.leftHand.position.x) * 0.2;
+            this.leftHand.position.y += (leftHandData.position.y - this.leftHand.position.y) * 0.2;
             
-            // Smooth rotation values with faster response
-            if (data.rotationZ !== undefined) {
-                this.rotationZ += (data.rotationZ - this.rotationZ) * 0.25;
+            if (leftHandData.rotationZ !== undefined) {
+                this.leftHand.rotationZ += (leftHandData.rotationZ - this.leftHand.rotationZ) * 0.25;
             }
-            if (data.rotationX !== undefined) {
-                this.rotationX += (data.rotationX - this.rotationX) * 0.25;
-            }
-            
-            // Debug: Log current gesture state periodically
-            if (Math.random() < 0.05) { // 5% chance to log
-                console.log('[HandTracker] Current gesture state:', {
-                    gestureState: this.gestureState.toFixed(2),
-                    fingers: this.fingers,
-                    position: { x: this.position.x.toFixed(2), y: this.position.y.toFixed(2) },
-                    rotationZ: this.rotationZ.toFixed(2),
-                    rotationX: this.rotationX.toFixed(2)
-                });
-            }
-            
-            // Gesture toggle: Closed fist (all fingers down) for 1 second toggles camera
-            // Check if all 4 fingers are closed (fingers === 0) and hand is closed (pinch < 0.3)
-            if (data.fingers === 0 && data.pinch < 0.3) {
-                this.gestureToggleCooldown += 16; // Approximate frame time
-                
-                // If held for 1 second (1000ms) and callback exists
-                if (this.gestureToggleCooldown >= 1000 && this.toggleCallback && 
-                    currentTime - this.lastToggleTime > 2000) { // 2 second cooldown
-                    console.log('[HandTracker] Gesture toggle triggered!');
-                    this.toggleCallback();
-                    this.lastToggleTime = currentTime;
-                    this.gestureToggleCooldown = 0;
-                }
-            } else {
-                // Reset cooldown if gesture is released
-                this.gestureToggleCooldown = 0;
+            if (leftHandData.rotationX !== undefined) {
+                this.leftHand.rotationX += (leftHandData.rotationX - this.leftHand.rotationX) * 0.25;
             }
         } else {
-            // Default to open if no hand detected
+            // Smoothly return to center if no left hand
+            this.leftHand.position.x += (0.5 - this.leftHand.position.x) * 0.1;
+            this.leftHand.position.y += (0.5 - this.leftHand.position.y) * 0.1;
+            this.leftHand.rotationZ += (0 - this.leftHand.rotationZ) * 0.1;
+            this.leftHand.rotationX += (0 - this.leftHand.rotationX) * 0.1;
+        }
+        
+        // Process right hand data (shape and scale)
+        if (rightHandData) {
+            // Right hand: gesture state (pinch) and fingers
+            this.rightHand.gestureState += (rightHandData.pinch - this.rightHand.gestureState) * 0.2;
+            
+            // Use state machine for finger detection to avoid jitter
+            this.fingerStateHistory.push(rightHandData.fingers);
+            if (this.fingerStateHistory.length > this.fingerStateHistorySize) {
+                this.fingerStateHistory.shift();
+            }
+            
+            // Count occurrences of each finger count in recent history
+            const fingerCounts = {};
+            this.fingerStateHistory.forEach(count => {
+                fingerCounts[count] = (fingerCounts[count] || 0) + 1;
+            });
+            
+            // Find the most common finger count
+            let mostCommonFingers = this.currentStableFingers;
+            let maxCount = 0;
+            for (const [count, occurrences] of Object.entries(fingerCounts)) {
+                if (occurrences > maxCount && occurrences >= this.fingerStateThreshold) {
+                    maxCount = occurrences;
+                    mostCommonFingers = parseInt(count);
+                }
+            }
+            
+            // Only update if we have a stable detection
+            if (mostCommonFingers !== this.currentStableFingers && maxCount >= this.fingerStateThreshold) {
+                const oldFingers = this.currentStableFingers;
+                this.currentStableFingers = mostCommonFingers;
+                this.rightHand.fingers = mostCommonFingers;
+                
+                // Notify callback if finger count changed
+                if (this.fingerChangeCallback && oldFingers !== mostCommonFingers) {
+                    this.fingerChangeCallback(mostCommonFingers);
+                }
+            } else {
+                // Keep current stable value
+                this.rightHand.fingers = this.currentStableFingers;
+            }
+            
+            // Gesture toggle: Right hand closed fist for 1 second toggles camera
+            // DISABLED: 暂时禁用握拳关闭摄像机功能
+            // if (rightHandData.fingers === 0 && rightHandData.pinch < 0.3) {
+            //     this.gestureToggleCooldown += 16;
+            //     if (this.gestureToggleCooldown >= 1000 && this.toggleCallback && 
+            //         currentTime - this.lastToggleTime > 2000) {
+            //         console.log('[HandTracker] Gesture toggle triggered!');
+            //         this.toggleCallback();
+            //         this.lastToggleTime = currentTime;
+            //         this.gestureToggleCooldown = 0;
+            //     }
+            // } else {
+            //     this.gestureToggleCooldown = 0;
+            // }
+            this.gestureToggleCooldown = 0; // Reset cooldown
+        } else {
+            // Default to open if no right hand detected
+            this.rightHand.gestureState += (1.0 - this.rightHand.gestureState) * 0.05;
+            // Reset finger state history when no hand detected
+            this.fingerStateHistory = [];
+            this.currentStableFingers = 0;
+            this.rightHand.fingers = 0;
+            this.gestureToggleCooldown = 0;
+        }
+        
+        // Legacy single hand support (use right hand if available, otherwise left hand)
+        if (rightHandData) {
+            this.gestureState = this.rightHand.gestureState;
+            this.fingers = this.rightHand.fingers;
+            this.position = rightHandData.position;
+        } else if (leftHandData) {
+            this.gestureState = 1.0; // Default open for left hand
+            this.fingers = 0;
+            this.position = this.leftHand.position;
+            this.rotationZ = this.leftHand.rotationZ;
+            this.rotationX = this.leftHand.rotationX;
+        } else {
+            // No hands detected
             this.gestureState += (1.0 - this.gestureState) * 0.05;
             this.fingers = 0;
             this.position = { x: 0.5, y: 0.5 };
-            // Smoothly return rotation to center
             this.rotationZ += (0 - this.rotationZ) * 0.1;
             this.rotationX += (0 - this.rotationX) * 0.1;
-            // Reset gesture toggle cooldown
-            this.gestureToggleCooldown = 0;
+        }
+    }
+
+    processResults(data) {
+        // Legacy method for backward compatibility
+        // Convert single hand data to dual hand format
+        if (data) {
+            this.processDualHandResults(null, data);
+        } else {
+            this.processDualHandResults(null, null);
         }
     }
 
@@ -465,5 +606,31 @@ export class HandTracker {
 
     getRotationX() {
         return this.rotationX || 0.0;
+    }
+
+    // Dual hand data getters
+    getLeftHandData() {
+        return {
+            position: this.leftHand.position || { x: 0.5, y: 0.5 },
+            rotationZ: this.leftHand.rotationZ || 0.0,
+            rotationX: this.leftHand.rotationX || 0.0
+        };
+    }
+
+    getRightHandData() {
+        return {
+            gestureState: this.rightHand.gestureState || 1.0,
+            fingers: this.rightHand.fingers || 0,
+            position: this.rightHand.position || { x: 0.5, y: 0.5 }
+        };
+    }
+
+    // Alias methods for convenience (matching main.js usage)
+    getLeftHand() {
+        return this.getLeftHandData();
+    }
+
+    getRightHand() {
+        return this.getRightHandData();
     }
 }
