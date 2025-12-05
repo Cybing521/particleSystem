@@ -87,9 +87,11 @@ export class UIManager {
 
                 <div class="control-group">
                     <button id="camera-toggle-btn" class="camera-btn">
-                        <span class="camera-icon">📷</span>
                         <span class="camera-text">启用摄像头</span>
                     </button>
+                    <div class="camera-hint">
+                        若无法唤起摄像头：在浏览器地址栏允许权限；系统设置中为浏览器开启摄像头；手机端需在设置里为浏览器或微信等容器授予摄像头权限。
+                    </div>
                 </div>
 
                 <div class="control-group">
@@ -126,26 +128,15 @@ export class UIManager {
     setupDraggable() {
         const panel = this.controlsPanel;
         let isDragging = false;
-        let currentX;
-        let currentY;
-        let initialX;
-        let initialY;
-        let xOffset = 0;
-        let yOffset = 0;
+        let initialMouseX = 0;
+        let initialMouseY = 0;
+        let initialPanelX = 0;
+        let initialPanelY = 0;
+        let hasSwitchedToTopLeft = false;
 
         const header = panel.querySelector('.panel-header');
         header.style.cursor = 'move';
         header.style.userSelect = 'none';
-
-        // Calculate drag boundaries (95% of screen centered)
-        const getBoundaries = () => {
-            const margin = 0.025; // 2.5% margin on each side = 95% total
-            const minX = window.innerWidth * margin;
-            const maxX = window.innerWidth * (1 - margin) - panel.offsetWidth;
-            const minY = window.innerHeight * margin;
-            const maxY = window.innerHeight * (1 - margin) - panel.offsetHeight;
-            return { minX, maxX, minY, maxY };
-        };
 
         header.addEventListener('mousedown', dragStart);
         document.addEventListener('mousemove', drag);
@@ -153,34 +144,83 @@ export class UIManager {
 
         function dragStart(e) {
             if (e.target.closest('button')) return; // Don't drag when clicking buttons
-            
-            const rect = panel.getBoundingClientRect();
-            xOffset = rect.left;
-            yOffset = rect.top;
-            
-            initialX = e.clientX - xOffset;
-            initialY = e.clientY - yOffset;
 
             if (e.target === header || header.contains(e.target)) {
+                e.preventDefault(); // Prevent text selection
                 isDragging = true;
+                hasSwitchedToTopLeft = false;
                 panel.style.transition = 'none'; // Disable transition while dragging
+                
+                // Store initial mouse position (viewport coordinates)
+                initialMouseX = e.clientX;
+                initialMouseY = e.clientY;
+                
+                // Get current panel position
+                // Check if panel already has left/top set (already using top/left positioning)
+                const currentLeft = parseFloat(panel.style.left);
+                const currentTop = parseFloat(panel.style.top);
+                
+                if (!isNaN(currentLeft) && !isNaN(currentTop)) {
+                    // Panel already using top/left positioning
+                    initialPanelX = currentLeft;
+                    initialPanelY = currentTop;
+                    hasSwitchedToTopLeft = true;
+                } else {
+                    // Panel using bottom/left positioning, need to convert
+                    // Get visual position from getBoundingClientRect (after transform)
+                    const panelRect = panel.getBoundingClientRect();
+                    const parentRect = panel.parentElement.getBoundingClientRect();
+                    
+                    // Visual position relative to parent (this is what we see on screen)
+                    const visualLeft = panelRect.left - parentRect.left;
+                    const visualTop = panelRect.top - parentRect.top;
+                    
+                    // Store visual position as initial CSS position
+                    // Since transform-origin is "left bottom", the left edge doesn't move,
+                    // so visual left = CSS left. For top, we use visual top directly.
+                    initialPanelX = visualLeft;
+                    initialPanelY = visualTop;
+                }
             }
         }
 
         function drag(e) {
             if (isDragging) {
                 e.preventDefault();
-                const boundaries = getBoundaries();
                 
-                currentX = e.clientX - initialX;
-                currentY = e.clientY - initialY;
+                // On first drag, switch from bottom/left to top/left positioning if needed
+                if (!hasSwitchedToTopLeft) {
+                    // Switch to top/left positioning
+                    panel.style.left = initialPanelX + 'px';
+                    panel.style.top = initialPanelY + 'px';
+                    panel.style.right = 'auto';
+                    panel.style.bottom = 'auto';
+                    
+                    hasSwitchedToTopLeft = true;
+                    
+                    // Update initial panel position and mouse position for smooth dragging
+                    const parentRect = panel.parentElement.getBoundingClientRect();
+                    initialPanelX = parseFloat(panel.style.left);
+                    initialPanelY = parseFloat(panel.style.top);
+                    initialMouseX = e.clientX;
+                    initialMouseY = e.clientY;
+                    
+                    // Return early - don't move panel on first drag, just switch positioning
+                    return;
+                }
+                
+                // Calculate mouse movement delta
+                const deltaX = e.clientX - initialMouseX;
+                const deltaY = e.clientY - initialMouseY;
+                
+                // Apply delta directly to CSS position
+                // CSS left/top coordinates are not affected by transform scale
+                const newX = initialPanelX + deltaX;
+                const newY = initialPanelY + deltaY;
 
-                // Constrain to boundaries
-                currentX = Math.max(boundaries.minX, Math.min(boundaries.maxX, currentX));
-                currentY = Math.max(boundaries.minY, Math.min(boundaries.maxY, currentY));
-
-                panel.style.left = currentX + 'px';
-                panel.style.top = currentY + 'px';
+                // No boundaries - free dragging
+                panel.style.left = newX + 'px';
+                panel.style.top = newY + 'px';
                 panel.style.right = 'auto';
                 panel.style.bottom = 'auto';
             }
@@ -190,24 +230,9 @@ export class UIManager {
             if (isDragging) {
                 panel.style.transition = ''; // Re-enable transition
                 isDragging = false;
+                hasSwitchedToTopLeft = false;
             }
         }
-        
-        // Update boundaries on window resize
-        window.addEventListener('resize', () => {
-            if (!isDragging) {
-                const boundaries = getBoundaries();
-                const rect = panel.getBoundingClientRect();
-                let x = rect.left;
-                let y = rect.top;
-                
-                x = Math.max(boundaries.minX, Math.min(boundaries.maxX, x));
-                y = Math.max(boundaries.minY, Math.min(boundaries.maxY, y));
-                
-                panel.style.left = x + 'px';
-                panel.style.top = y + 'px';
-            }
-        });
     }
 
     setupCollapsible() {
@@ -520,6 +545,9 @@ export class UIManager {
                         <label>平滑度: <span id="smooth-value">0.2</span></label>
                         <input type="range" id="smooth" min="0.1" max="0.5" step="0.05" value="0.2">
                     </div>
+                    <div class="calibration-control">
+                        <button id="panel-reset-position" class="panel-reset-btn">重置控制面板位置</button>
+                    </div>
                     <div class="modal-actions">
                         <button id="calibration-reset">重置为默认</button>
                         <button id="calibration-save">保存</button>
@@ -594,6 +622,11 @@ export class UIManager {
             updateValue('pos-sens', settings.positionSensitivity);
             updateValue('rot-sens', settings.rotationSensitivity);
             updateValue('smooth', settings.smoothingFactor);
+        });
+        
+        // Reset panel position button
+        document.getElementById('panel-reset-position').addEventListener('click', () => {
+            this.resetPanelPosition();
         });
         
         // Close button
@@ -843,15 +876,12 @@ export class UIManager {
     updateCameraButton() {
         const cameraBtn = this.container.querySelector('#camera-toggle-btn');
         const cameraText = cameraBtn.querySelector('.camera-text');
-        const cameraIcon = cameraBtn.querySelector('.camera-icon');
         
         if (this.handTracker.isCameraEnabled()) {
             cameraText.textContent = '禁用摄像头';
-            cameraIcon.textContent = '📷';
             cameraBtn.classList.add('active');
         } else {
             cameraText.textContent = '启用摄像头';
-            cameraIcon.textContent = '📷';
             cameraBtn.classList.remove('active');
         }
     }
@@ -865,5 +895,20 @@ export class UIManager {
                 btn.classList.remove('active');
             }
         });
+    }
+    
+    resetPanelPosition() {
+        const panel = this.controlsPanel;
+        // Reset to initial position (bottom: 12px, left: 12px)
+        panel.style.left = '12px';
+        panel.style.top = 'auto';
+        panel.style.right = 'auto';
+        panel.style.bottom = '12px';
+        panel.style.transition = 'all 0.3s ease';
+        
+        // Remove transition after animation completes
+        setTimeout(() => {
+            panel.style.transition = '';
+        }, 300);
     }
 }
