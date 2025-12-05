@@ -393,37 +393,59 @@ export class UIManager {
                 } catch (err) {
                     console.error('Camera error:', err);
                     
-                    // 根据错误类型显示不同的提示
                     const errorMessage = err.message || String(err);
-                    let userMessage = '无法启动摄像头。\n\n';
-                    
-                    if (errorMessage.includes('无法初始化手势识别模型') || 
+                    const isModelError = errorMessage.includes('无法初始化手势识别模型') ||
                         errorMessage.includes('Failed to fetch') ||
-                        errorMessage.includes('ERR_CONNECTION')) {
-                        userMessage += '手势识别模型加载失败。\n\n' +
-                            '可能的原因：\n' +
-                            '• 网络连接问题，无法访问 Google Storage\n' +
-                            '• 防火墙或代理设置阻止了连接\n' +
-                            '• 请检查网络连接后重试\n\n' +
-                            '提示：请确保可以访问 storage.googleapis.com';
-                    } else if (errorMessage.includes('Permission') || 
-                               errorMessage.includes('NotAllowedError') ||
-                               errorMessage.includes('权限')) {
-                        userMessage += '摄像头权限被拒绝。\n\n' +
-                            '请：\n' +
-                            '• 在浏览器设置中允许摄像头访问\n' +
-                            '• 刷新页面后重试';
-                    } else if (errorMessage.includes('NotFoundError') ||
-                               errorMessage.includes('没有找到')) {
-                        userMessage += '未检测到摄像头设备。\n\n' +
-                            '请：\n' +
-                            '• 检查摄像头是否已连接\n' +
-                            '• 确保摄像头未被其他应用占用';
-                    } else {
-                        userMessage += `错误详情：${errorMessage}`;
-                    }
-                    
-                    alert(userMessage);
+                        errorMessage.includes('ERR_CONNECTION') ||
+                        errorMessage.includes('NetworkError');
+                    const isPermissionError = errorMessage.includes('Permission') ||
+                        errorMessage.includes('NotAllowedError') ||
+                        errorMessage.includes('权限');
+                    const isDeviceError = errorMessage.includes('NotFoundError') ||
+                        errorMessage.includes('没有找到');
+
+                    const sections = [
+                        {
+                            title: '快速判断',
+                            items: [
+                                '若浏览器弹出“允许摄像头”被拒绝 → 属于摄像头权限问题',
+                                '若提示无法访问 storage.googleapis.com → 属于模型加载/网络问题',
+                                '若摄像头指示灯未亮且未弹权限 → 可能是设备占用或缺失'
+                            ]
+                        },
+                        {
+                            title: '模型加载 / 网络',
+                            items: [
+                                '确认当前网络能直接访问 https://storage.googleapis.com （无科学上网时会失败）',
+                                '关闭可能拦截的防火墙/代理，或为浏览器单独配置可直连策略',
+                                '刷新页面后重试；若仍失败可切换网络或临时使用 VPN'
+                            ],
+                            highlight: isModelError
+                        },
+                        {
+                            title: '摄像头权限',
+                            items: [
+                                '在浏览器地址栏点击摄像头权限图标，允许本页面访问摄像头',
+                                '系统偏好设置 > 隐私与安全性 > 摄像头，确认浏览器已勾选',
+                                '刷新页面重新触发权限弹窗'
+                            ],
+                            highlight: isPermissionError
+                        },
+                        {
+                            title: '设备或占用',
+                            items: [
+                                '检查摄像头是否被其他应用占用，关闭后重试',
+                                '若为外接摄像头，确认连接正常或更换端口'
+                            ],
+                            highlight: isDeviceError
+                        }
+                    ];
+
+                    this.showErrorModal({
+                        title: '无法启动摄像头或加载手势模型',
+                        summary: errorMessage,
+                        sections
+                    });
                 } finally {
                     // 恢复按钮状态
                     cameraBtn.disabled = false;
@@ -594,66 +616,157 @@ export class UIManager {
         modal.innerHTML = `
             <div class="modal-content tutorial-modal">
                 <div class="modal-header">
-                    <h2>手势控制教程</h2>
+                    <h2>基础教程</h2>
                     <button class="modal-close">&times;</button>
                 </div>
-                <div class="modal-body">
-                    <div class="tutorial-step">
-                        <div class="tutorial-icon">${tutorial.steps[0].icon}</div>
-                        <h3 id="tutorial-step-title">${tutorial.steps[0].title}</h3>
-                        <p id="tutorial-step-desc">${tutorial.steps[0].description}</p>
-                        <div class="tutorial-progress">
-                            <span id="tutorial-progress">1 / ${tutorial.steps.length}</span>
-                        </div>
+                <div class="modal-body tutorial-tabs">
+                    <div class="tab-header">
+                        <button class="tab-btn active" data-tab="guide">手势管理</button>
+                        <button class="tab-btn" data-tab="issues">常见问题</button>
+                        <button class="tab-btn" data-tab="contact">发送反馈</button>
                     </div>
-                    <div class="modal-actions">
-                        <button id="tutorial-prev" disabled>上一步</button>
-                        <button id="tutorial-next">下一步</button>
-                        <button id="tutorial-skip">跳过</button>
-                    </div>
+                    <div class="tab-content" id="tutorial-tab-content"></div>
                 </div>
             </div>
         `;
         
         document.body.appendChild(modal);
         
-        const updateStep = () => {
+        const tabContent = modal.querySelector('#tutorial-tab-content');
+
+        const renderGuideTab = () => {
             const step = this.tutorialService.getCurrentStep();
-            if (!step) {
-                document.body.removeChild(modal);
-                return;
-            }
-            
-            document.getElementById('tutorial-step-title').textContent = step.title;
-            document.getElementById('tutorial-step-desc').textContent = step.description;
-            document.querySelector('.tutorial-icon').textContent = step.icon;
             const currentStep = this.tutorialService.tutorialStep + 1;
             const totalSteps = tutorial.steps.length;
-            document.getElementById('tutorial-progress').textContent = `${currentStep} / ${totalSteps}`;
-            
-            document.getElementById('tutorial-prev').disabled = currentStep === 1;
-            document.getElementById('tutorial-next').textContent = currentStep === totalSteps ? '完成' : '下一步';
+            return `
+                <div class="tutorial-step">
+                    <div class="tutorial-icon">${step.icon}</div>
+                    <h3 id="tutorial-step-title">${step.title}</h3>
+                    <p id="tutorial-step-desc">${step.description}</p>
+                    <div class="tutorial-progress">
+                        <span id="tutorial-progress">${currentStep} / ${totalSteps}</span>
+                    </div>
+                    <div class="modal-actions">
+                        <button id="tutorial-prev" ${currentStep === 1 ? 'disabled' : ''}>上一步</button>
+                        <button id="tutorial-next">${currentStep === totalSteps ? '完成' : '下一步'}</button>
+                        <button id="tutorial-skip">跳过</button>
+                    </div>
+                </div>
+            `;
         };
-        
-        document.getElementById('tutorial-next').addEventListener('click', () => {
-            const step = this.tutorialService.nextStep();
-            if (step) {
-                updateStep();
+
+        const renderIssuesTab = () => `
+            <div class="issues-panel">
+                <h3>常见问题 & 自检</h3>
+                <div class="issue-card">
+                    <div class="issue-title">模型加载失败</div>
+                    <ul>
+                        <li>确认能直接访问 https://storage.googleapis.com</li>
+                        <li>若处于国内网络，请使用可直连的网络或开启科学上网</li>
+                        <li>刷新页面或切换网络后重试</li>
+                    </ul>
+                </div>
+                <div class="issue-card">
+                    <div class="issue-title">摄像头无法启用</div>
+                    <ul>
+                        <li>在浏览器地址栏允许摄像头访问；系统隐私中为浏览器勾选摄像头</li>
+                        <li>关闭占用摄像头的其他应用，或更换外接摄像头端口</li>
+                        <li>若无权限弹窗且指示灯不亮，尝试重新插拔或重启浏览器</li>
+                    </ul>
+                </div>
+                <div class="issue-card">
+                    <div class="issue-title">画面卡顿</div>
+                    <ul>
+                        <li>降低粒子数量或关闭其他占用 GPU 的页面</li>
+                        <li>切换到性能更好的浏览器（Chrome 109+）</li>
+                    </ul>
+                </div>
+            </div>
+        `;
+
+        const renderContactTab = () => `
+            <div class="contact-panel">
+                <h3>发送反馈到 cyibin07@gmail.com</h3>
+                <p class="contact-tip">不会外发任何隐私，仅用于排查问题。优先描述：当前网络环境、是否开启科学上网、错误提示、浏览器版本。</p>
+                <label class="contact-label">您的邮箱（可选，便于回复）</label>
+                <input type="email" id="contact-email" placeholder="you@example.com" />
+                <label class="contact-label">问题描述</label>
+                <textarea id="contact-message" rows="5" placeholder="请输入问题、复现步骤、截图链接等"></textarea>
+                <button id="contact-send">发送邮件</button>
+                <div class="contact-footer">发送将调用系统邮箱或 Gmail 客户端；若未自动唤起，请复制邮件手动发送。</div>
+            </div>
+        `;
+
+        const switchTab = (tabId) => {
+            const buttons = modal.querySelectorAll('.tab-btn');
+            buttons.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tabId));
+            if (tabId === 'guide') {
+                tabContent.innerHTML = renderGuideTab();
+                bindGuideActions();
+            } else if (tabId === 'issues') {
+                tabContent.innerHTML = renderIssuesTab();
             } else {
-                document.body.removeChild(modal);
+                tabContent.innerHTML = renderContactTab();
+                bindContactActions();
             }
+        };
+
+        const bindGuideActions = () => {
+            const updateStep = () => {
+                const step = this.tutorialService.getCurrentStep();
+                if (!step) {
+                    document.body.removeChild(modal);
+                    return;
+                }
+                tabContent.innerHTML = renderGuideTab();
+                bindGuideActions();
+            };
+
+            tabContent.querySelector('#tutorial-next')?.addEventListener('click', () => {
+                const step = this.tutorialService.nextStep();
+                if (step) {
+                    updateStep();
+                } else {
+                    document.body.removeChild(modal);
+                }
+            });
+
+            tabContent.querySelector('#tutorial-prev')?.addEventListener('click', () => {
+                this.tutorialService.previousStep();
+                updateStep();
+            });
+
+            tabContent.querySelector('#tutorial-skip')?.addEventListener('click', () => {
+                this.tutorialService.cancelTutorial();
+                document.body.removeChild(modal);
+            });
+        };
+
+        const bindContactActions = () => {
+            const sendBtn = tabContent.querySelector('#contact-send');
+            sendBtn?.addEventListener('click', () => {
+                const email = tabContent.querySelector('#contact-email').value.trim();
+                const message = tabContent.querySelector('#contact-message').value.trim();
+                const subject = encodeURIComponent('手势控制反馈');
+                const envInfo = [
+                    `UserAgent: ${navigator.userAgent}`,
+                    `Language: ${navigator.language}`,
+                    `Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`
+                ].join('\n');
+                const body = encodeURIComponent(
+                    `${message || '（请填写具体问题）'}\n\n------\n联系方式: ${email || '未提供'}\n${envInfo}`
+                );
+                const mailto = `mailto:cyibin07@gmail.com?subject=${subject}&body=${body}`;
+                window.location.href = mailto;
+            });
+        };
+
+        modal.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => switchTab(btn.dataset.tab));
         });
-        
-        document.getElementById('tutorial-prev').addEventListener('click', () => {
-            this.tutorialService.previousStep();
-            updateStep();
-        });
-        
-        document.getElementById('tutorial-skip').addEventListener('click', () => {
-            this.tutorialService.cancelTutorial();
-            document.body.removeChild(modal);
-        });
-        
+
+        switchTab('guide');
+
         modal.querySelector('.modal-close').addEventListener('click', () => {
             this.tutorialService.cancelTutorial();
             document.body.removeChild(modal);
@@ -686,6 +799,45 @@ export class UIManager {
                 }
             }, 300);
         }, 3000);
+    }
+
+    showErrorModal({ title, summary, sections = [] }) {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-content error-modal">
+                <div class="modal-header">
+                    <h2>${title}</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="error-summary">
+                        <div class="error-label">错误详情</div>
+                        <div class="error-text">${summary}</div>
+                    </div>
+                    <div class="error-section-list">
+                        ${sections.map(section => `
+                            <div class="error-section ${section.highlight ? 'highlight' : ''}">
+                                <div class="error-section-title">${section.title}</div>
+                                <ul>
+                                    ${section.items.map(item => `<li>${item}</li>`).join('')}
+                                </ul>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        modal.querySelector('.modal-close').addEventListener('click', () => {
+            document.body.removeChild(modal);
+        });
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+            }
+        });
     }
 
     updateCameraButton() {
