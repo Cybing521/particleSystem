@@ -43,7 +43,7 @@ canvas {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 40px;
+  padding: 12px;
   box-sizing: border-box;
 }
 
@@ -56,13 +56,13 @@ canvas {
   border-radius: 24px;
   padding: 0;
   width: 100%;
-  max-width: 360px;
+  max-width: 255px;
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-md);
   position: absolute;
-  bottom: 40px;
-  left: 40px;
+  bottom: 12px;
+  left: 12px;
   z-index: 100;
 }
 
@@ -70,7 +70,7 @@ canvas {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border-color);
   cursor: move;
 }
@@ -105,10 +105,10 @@ canvas {
 }
 
 .panel-content {
-  padding: 24px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 8px;
   transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
               opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1),
               padding-top 0.35s cubic-bezier(0.4, 0, 0.2, 1),
@@ -139,12 +139,12 @@ button {
   background: #fff;
   border: 1px solid var(--border-color);
   color: var(--text-color);
-  padding: 10px 20px;
-  border-radius: 12px;
+  padding: 5px 10px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   box-shadow: var(--shadow-sm);
 }
@@ -167,8 +167,8 @@ input[type="color"] {
   appearance: none;
   border: 1px solid var(--border-color);
   width: 100%;
-  height: 48px;
-  border-radius: 12px;
+  height: 26px;
+  border-radius: 7px;
   cursor: pointer;
   background: white;
   padding: 4px;
@@ -201,7 +201,7 @@ input[type="file"] {
   cursor: pointer;
   border-radius: 12px;
   background: white;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   width: 100%;
   text-align: center;
@@ -221,7 +221,7 @@ input[type="file"] {
   justify-content: center;
   gap: 8px;
   width: 100%;
-  padding: 12px 20px;
+  padding: 7px 11px;
 }
 
 .camera-btn .camera-icon {
@@ -242,7 +242,7 @@ input[type="file"] {
 /* Button Row - Three buttons in one line */
 .button-row {
   display: flex;
-  gap: 12px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
@@ -341,7 +341,7 @@ input[type="file"] {
 .calibration-control label {
   display: block;
   margin-bottom: 8px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-color);
 }
@@ -352,6 +352,7 @@ input[type="file"] {
   border-radius: 3px;
   background: #e0e0e0;
   outline: none;
+  appearance: none;
   -webkit-appearance: none;
 }
 
