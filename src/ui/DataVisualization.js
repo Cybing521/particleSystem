@@ -188,7 +188,7 @@ export class DataVisualization {
     }
     
     update() {
-        if (!this.isVisible || !this.panel) return;
+        if (!this.isVisible || !this.panel) {return;}
         
         // Update gesture data
         const leftHand = this.handTracker.getLeftHand();

@@ -77,13 +77,13 @@ function analyzeHand(landmarks) {
     let fingers = 0;
 
     // Index
-    if (landmarks[8].y < landmarks[6].y) fingers++;
+    if (landmarks[8].y < landmarks[6].y) {fingers++;}
     // Middle
-    if (landmarks[12].y < landmarks[10].y) fingers++;
+    if (landmarks[12].y < landmarks[10].y) {fingers++;}
     // Ring
-    if (landmarks[16].y < landmarks[14].y) fingers++;
+    if (landmarks[16].y < landmarks[14].y) {fingers++;}
     // Pinky
-    if (landmarks[20].y < landmarks[18].y) fingers++;
+    if (landmarks[20].y < landmarks[18].y) {fingers++;}
 
     // Thumb is tricky, check x distance relative to wrist
     // Simple check: if thumb tip is far from index knuckle
@@ -120,7 +120,7 @@ function analyzeHand(landmarks) {
     // Alternative: Use index finger direction for more stable detection
     const indexVectorX = indexMCP.x - wrist.x;
     const indexVectorY = indexMCP.y - wrist.y;
-    let indexAngle = Math.atan2(indexVectorY, indexVectorX) - Math.PI / 2;
+    const indexAngle = Math.atan2(indexVectorY, indexVectorX) - Math.PI / 2;
     let rotationZAlt = indexAngle / (Math.PI / 3);
     rotationZAlt = Math.max(-1, Math.min(1, rotationZAlt));
     

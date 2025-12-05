@@ -1,8 +1,14 @@
 /**
  * 手势检测服务（模块化重构）
  * 将手势检测抽象为独立的服务，提供统一的接口和错误处理
+ * 
+ * @class GestureService
  */
 export class GestureService {
+    /**
+     * 创建 GestureService 实例
+     * @param {HandTracker} handTracker - HandTracker 实例
+     */
     constructor(handTracker) {
         this.handTracker = handTracker;
         this.isInitialized = false;
@@ -14,6 +20,7 @@ export class GestureService {
     
     /**
      * 初始化服务
+     * @returns {Promise<boolean>} 初始化成功返回 true，失败返回 false
      */
     async initialize() {
         try {
@@ -29,6 +36,7 @@ export class GestureService {
     
     /**
      * 启用摄像头
+     * @returns {Promise<boolean>} 启用成功返回 true，失败返回 false
      */
     async enableCamera() {
         try {
@@ -44,6 +52,7 @@ export class GestureService {
     
     /**
      * 禁用摄像头
+     * @returns {boolean} 禁用成功返回 true，失败返回 false
      */
     disableCamera() {
         try {
@@ -57,6 +66,15 @@ export class GestureService {
     
     /**
      * 获取手势数据
+     * @returns {Object|null} 手势数据对象，如果未初始化则返回 null
+     * @returns {Object} returns.leftHand - 左手数据
+     * @returns {Object} returns.rightHand - 右手数据
+     * @returns {number} returns.gestureState - 手势状态（向后兼容）
+     * @returns {number} returns.fingers - 手指数量（向后兼容）
+     * @returns {{x: number, y: number}} returns.position - 手部位置（向后兼容）
+     * @returns {number} returns.rotationZ - 旋转值（向后兼容）
+     * @returns {number} returns.rotationX - 倾斜值（向后兼容）
+     * @returns {boolean} returns.isTracking - 是否正在追踪
      */
     getGestureData() {
         if (!this.isInitialized) {
@@ -83,6 +101,8 @@ export class GestureService {
     
     /**
      * 注册手势回调
+     * @param {string} gestureType - 手势类型
+     * @param {Function} callback - 回调函数
      */
     onGesture(gestureType, callback) {
         if (!this.gestureCallbacks.has(gestureType)) {
@@ -93,6 +113,8 @@ export class GestureService {
     
     /**
      * 移除手势回调
+     * @param {string} gestureType - 手势类型
+     * @param {Function} callback - 要移除的回调函数
      */
     offGesture(gestureType, callback) {
         if (this.gestureCallbacks.has(gestureType)) {
@@ -106,6 +128,8 @@ export class GestureService {
     
     /**
      * 触发手势事件
+     * @param {string} gestureType - 手势类型
+     * @param {*} data - 事件数据
      */
     triggerGesture(gestureType, data) {
         if (this.gestureCallbacks.has(gestureType)) {
@@ -121,6 +145,7 @@ export class GestureService {
     
     /**
      * 注册错误处理器
+     * @param {Function} handler - 错误处理函数，接收 errorInfo 参数
      */
     onError(handler) {
         this.errorHandlers.push(handler);
@@ -128,6 +153,7 @@ export class GestureService {
     
     /**
      * 移除错误处理器
+     * @param {Function} handler - 要移除的错误处理函数
      */
     offError(handler) {
         const index = this.errorHandlers.indexOf(handler);
@@ -138,6 +164,8 @@ export class GestureService {
     
     /**
      * 处理错误
+     * @param {string} context - 错误上下文
+     * @param {Error} error - 错误对象
      */
     handleError(context, error) {
         const errorInfo = {
@@ -161,6 +189,8 @@ export class GestureService {
     
     /**
      * 尝试恢复
+     * @param {string} context - 恢复上下文（'camera' 或 'initialization'）
+     * @returns {Promise<boolean>} 恢复成功返回 true，失败返回 false
      */
     async attemptRecovery(context) {
         if (this.recoveryAttempts >= this.maxRecoveryAttempts) {
@@ -199,6 +229,11 @@ export class GestureService {
     
     /**
      * 获取服务状态
+     * @returns {Object} 服务状态对象
+     * @returns {boolean} returns.isInitialized - 是否已初始化
+     * @returns {boolean} returns.isTracking - 是否正在追踪
+     * @returns {number} returns.recoveryAttempts - 恢复尝试次数
+     * @returns {boolean} returns.hasError - 是否有错误
      */
     getStatus() {
         return {

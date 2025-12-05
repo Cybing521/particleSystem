@@ -2,7 +2,19 @@ import { GestureCalibrationService } from '../services/GestureCalibrationService
 import { TutorialService } from '../services/TutorialService.js';
 import { GestureControlService } from '../services/GestureControlService.js';
 
+/**
+ * UI 管理器类
+ * 负责创建和管理用户界面，包括控制面板、校准面板、教程等
+ * 
+ * @class UIManager
+ */
 export class UIManager {
+    /**
+     * 创建 UIManager 实例
+     * @param {ParticleSystem} particleSystem - 粒子系统实例
+     * @param {HandTracker} handTracker - 手势追踪器实例
+     * @param {GestureService} [gestureService=null] - 手势服务实例（可选）
+     */
     constructor(particleSystem, handTracker, gestureService = null) {
         this.particleSystem = particleSystem;
         this.handTracker = handTracker;
@@ -143,7 +155,7 @@ export class UIManager {
         document.addEventListener('mouseup', dragEnd);
 
         function dragStart(e) {
-            if (e.target.closest('button')) return; // Don't drag when clicking buttons
+            if (e.target.closest('button')) {return;} // Don't drag when clicking buttons
 
             if (e.target === header || header.contains(e.target)) {
                 e.preventDefault(); // Prevent text selection
@@ -642,7 +654,7 @@ export class UIManager {
     
     showTutorial() {
         const tutorial = this.tutorialService.startTutorial('basic');
-        if (!tutorial) return;
+        if (!tutorial) {return;}
         
         const modal = document.createElement('div');
         modal.className = 'modal-overlay';
@@ -809,7 +821,7 @@ export class UIManager {
     startHintSystem() {
         // Show contextual hints every 5 seconds
         setInterval(() => {
-            if (this.tutorialService.isActive) return; // Don't show hints during tutorial
+            if (this.tutorialService.isActive) {return;} // Don't show hints during tutorial
             
             const hint = this.tutorialService.generateContextualHint();
             if (hint) {

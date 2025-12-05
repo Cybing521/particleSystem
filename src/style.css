@@ -820,3 +820,210 @@ input[type="file"] {
 .checkbox-label span {
   flex: 1;
 }
+
+/* ============================================
+   移动端响应式适配
+   ============================================ */
+
+/* 移动端基础样式 */
+@media (max-width: 768px) {
+  /* 控制面板移动端优化 */
+  .controls-panel {
+    max-width: calc(100% - 24px);
+    width: calc(100% - 24px);
+    transform: scale(1, 1);
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    font-size: 14px;
+  }
+
+  .panel-header {
+    padding: 12px 16px;
+  }
+
+  .panel-title {
+    font-size: 13px;
+  }
+
+  .panel-content {
+    padding: 16px;
+    gap: 12px;
+  }
+
+  /* 按钮和控件移动端优化 */
+  button {
+    padding: 8px 16px;
+    font-size: 13px;
+    min-height: 40px; /* 增加触摸目标大小 */
+  }
+
+  .shape-selector {
+    gap: 8px;
+  }
+
+  .shape-selector button {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* 滑块控件优化 */
+  input[type="range"] {
+    min-height: 44px; /* iOS 推荐的最小触摸目标 */
+  }
+
+  /* 颜色选择器优化 */
+  input[type="color"] {
+    height: 40px;
+    min-height: 44px;
+  }
+
+  /* 文件上传按钮优化 */
+  .custom-file-upload {
+    padding: 12px 20px;
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  /* 控制组间距优化 */
+  .control-group {
+    margin-bottom: 16px;
+  }
+
+  .control-group h3 {
+    font-size: 11px;
+    margin-bottom: 12px;
+  }
+
+  /* 按钮行优化 */
+  .button-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .button-row button {
+    width: 100%;
+  }
+
+  /* 模态框移动端优化 */
+  .modal-content {
+    width: calc(100% - 32px);
+    max-width: calc(100% - 32px);
+    margin: 16px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+  }
+
+  .modal-header {
+    padding: 16px;
+  }
+
+  .modal-body {
+    padding: 16px;
+  }
+
+  /* 提示消息优化 */
+  .hint-message {
+    font-size: 13px;
+    padding: 12px 16px;
+    max-width: calc(100% - 48px);
+  }
+
+  /* 数据监控面板移动端优化 */
+  .data-panel {
+    width: calc(100% - 24px);
+    max-width: calc(100% - 24px);
+    right: 12px;
+    top: 12px;
+    font-size: 11px;
+    padding: 12px;
+  }
+
+  .data-panel h3 {
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+
+  .data-item {
+    font-size: 11px;
+    padding: 4px 0;
+  }
+}
+
+/* 小屏幕手机优化 */
+@media (max-width: 480px) {
+  .controls-panel {
+    max-width: calc(100% - 16px);
+    width: calc(100% - 16px);
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+  }
+
+  .panel-content {
+    padding: 12px;
+  }
+
+  button {
+    padding: 10px 14px;
+    font-size: 12px;
+  }
+
+  .modal-content {
+    width: calc(100% - 16px);
+    max-width: calc(100% - 16px);
+    margin: 8px;
+  }
+}
+
+/* 横屏模式优化 */
+@media (max-width: 768px) and (orientation: landscape) {
+  .controls-panel {
+    max-width: 320px;
+    width: 320px;
+  }
+
+  .panel-content {
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+  }
+}
+
+/* 触摸设备优化 */
+@media (hover: none) and (pointer: coarse) {
+  /* 移除 hover 效果，使用 active 状态 */
+  button:hover {
+    transform: none;
+  }
+
+  button:active {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  /* 增加触摸目标大小 */
+  .collapse-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .modal-close {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* 高 DPI 屏幕优化 */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .controls-panel {
+    border-width: 0.5px;
+  }
+
+  button {
+    border-width: 0.5px;
+  }
+}

@@ -1,6 +1,17 @@
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
+/**
+ * 手势追踪器类
+ * 使用 MediaPipe Hand Landmarker 进行实时手势检测和追踪
+ * 支持双手检测，分别控制不同的功能
+ * 
+ * @class HandTracker
+ */
 export class HandTracker {
+    /**
+     * 创建 HandTracker 实例
+     * @constructor
+     */
     constructor() {
         this.video = null;
         this.handLandmarker = null;
@@ -62,24 +73,48 @@ export class HandTracker {
     
     /**
      * 设置校准参数
+     * @param {Object} settings - 校准设置对象
+     * @param {number} settings.pinchSensitivity - 捏合灵敏度
+     * @param {number} settings.fingerSensitivity - 手指检测灵敏度
+     * @param {number} settings.positionSensitivity - 位置检测灵敏度
+     * @param {number} settings.rotationSensitivity - 旋转检测灵敏度
+     * @param {number} settings.smoothingFactor - 平滑度系数
      */
     setCalibrationSettings(settings) {
         this.calibrationSettings = settings;
     }
 
+    /**
+     * 设置摄像头切换回调函数
+     * @param {Function} callback - 切换回调函数
+     */
     setToggleCallback(callback) {
         this.toggleCallback = callback;
     }
     
+    /**
+     * 设置手指数量变化回调函数
+     * @param {Function} callback - 手指数量变化回调函数，参数为新的手指数量
+     */
     setFingerChangeCallback(callback) {
         this.fingerChangeCallback = callback;
     }
 
+    /**
+     * 初始化手势追踪器
+     * 加载 MediaPipe Hand Landmarker 模型
+     * @returns {Promise<void>}
+     */
     async init() {
         await this.initHandLandmarker();
         // Camera setup will be done when user enables it
     }
 
+    /**
+     * 启用摄像头并开始手势检测
+     * @returns {Promise<void>}
+     * @throws {Error} 如果摄像头初始化失败或模型加载失败
+     */
     async enableCamera() {
         if (this.isTracking) {
             console.log('[HandTracker] Camera already enabled');
@@ -97,6 +132,10 @@ export class HandTracker {
         console.log('[HandTracker] Camera enabled, starting detection...');
     }
 
+    /**
+     * 禁用摄像头并停止手势检测
+     * 释放所有相关资源
+     */
     disableCamera() {
         if (!this.isTracking) {
             return; // Already disabled
@@ -142,10 +181,20 @@ export class HandTracker {
         this.position = { x: 0.5, y: 0.5 };
     }
 
+    /**
+     * 检查摄像头是否已启用
+     * @returns {boolean} 如果摄像头已启用返回 true，否则返回 false
+     */
     isCameraEnabled() {
         return this.isTracking;
     }
 
+    /**
+     * 初始化 MediaPipe Hand Landmarker
+     * 使用 Full 模型以获得更高精度，支持双手检测
+     * @returns {Promise<void>}
+     * @throws {Error} 如果模型加载失败（最多重试3次）
+     */
     async initHandLandmarker() {
         const modelPath = `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`;
         const maxRetries = 3;
@@ -409,12 +458,12 @@ export class HandTracker {
     }
 
     getHandLabel(handednessEntry) {
-        if (!handednessEntry || !handednessEntry.length) return null;
+        if (!handednessEntry || !handednessEntry.length) {return null;}
         const category = handednessEntry[0]?.categoryName || handednessEntry[0]?.displayName;
-        if (!category) return null;
+        if (!category) {return null;}
         const normalized = category.toLowerCase();
-        if (normalized.includes('left')) return 'left';
-        if (normalized.includes('right')) return 'right';
+        if (normalized.includes('left')) {return 'left';}
+        if (normalized.includes('right')) {return 'right';}
         return null;
     }
 
@@ -508,13 +557,13 @@ export class HandTracker {
         let fingers = 0;
 
         // Index - check if tip is significantly above PIP joint
-        if (landmarks[8].y < landmarks[6].y - fingerThreshold) fingers++;
+        if (landmarks[8].y < landmarks[6].y - fingerThreshold) {fingers++;}
         // Middle
-        if (landmarks[12].y < landmarks[10].y - fingerThreshold) fingers++;
+        if (landmarks[12].y < landmarks[10].y - fingerThreshold) {fingers++;}
         // Ring
-        if (landmarks[16].y < landmarks[14].y - fingerThreshold) fingers++;
+        if (landmarks[16].y < landmarks[14].y - fingerThreshold) {fingers++;}
         // Pinky
-        if (landmarks[20].y < landmarks[18].y - fingerThreshold) fingers++;
+        if (landmarks[20].y < landmarks[18].y - fingerThreshold) {fingers++;}
 
         // 4. Hand Rotation Detection
         // Left/Right Rotation (Roll): Calculate hand tilt angle
@@ -537,7 +586,7 @@ export class HandTracker {
         // Alternative: Use index finger direction for more stable detection
         const indexVectorX = indexMCP.x - wrist.x;
         const indexVectorY = indexMCP.y - wrist.y;
-        let indexAngle = Math.atan2(indexVectorY, indexVectorX) - Math.PI / 2;
+        const indexAngle = Math.atan2(indexVectorY, indexVectorX) - Math.PI / 2;
         let rotationZAlt = indexAngle / (Math.PI / 3);
         rotationZAlt = Math.max(-1, Math.min(1, rotationZAlt));
         
@@ -710,27 +759,51 @@ export class HandTracker {
         }
     }
 
+    /**
+     * 获取手势状态（捏合程度）
+     * @returns {number} 手势状态值，范围 0.0-1.0（0.0=完全捏合，1.0=完全张开）
+     */
     getGestureState() {
         return this.gestureState;
     }
 
+    /**
+     * 获取手指数量
+     * @returns {number} 手指数量，范围 0-4
+     */
     getFingers() {
         return this.fingers || 0;
     }
 
+    /**
+     * 获取手部位置
+     * @returns {{x: number, y: number}} 手部位置，x 和 y 范围 0.0-1.0
+     */
     getPosition() {
         return this.position || { x: 0.5, y: 0.5 };
     }
 
+    /**
+     * 获取左右旋转值
+     * @returns {number} 旋转值，范围 -1.0 到 +1.0（-1.0=左倾斜，+1.0=右倾斜）
+     */
     getRotationZ() {
         return this.rotationZ || 0.0;
     }
 
+    /**
+     * 获取前后倾斜值
+     * @returns {number} 倾斜值，范围 -1.0 到 +1.0（-1.0=向后，+1.0=向前）
+     */
     getRotationX() {
         return this.rotationX || 0.0;
     }
 
-    // Dual hand data getters
+    /**
+     * 获取左手数据（向后兼容方法）
+     * @returns {Object} 左手数据对象
+     * @deprecated 使用 getLeftHand() 代替
+     */
     getLeftHandData() {
         return {
             position: this.leftHand.position || { x: 0.5, y: 0.5 },
@@ -739,6 +812,16 @@ export class HandTracker {
         };
     }
 
+    /**
+     * 获取右手数据（向后兼容方法）
+     * @returns {Object} 右手数据对象
+     * @deprecated 使用 getRightHand() 代替
+     */
+    /**
+     * 获取右手数据（向后兼容方法）
+     * @returns {Object} 右手数据对象
+     * @deprecated 使用 getRightHand() 代替
+     */
     getRightHandData() {
         return {
             gestureState: this.rightHand.gestureState || 1.0,
@@ -747,11 +830,25 @@ export class HandTracker {
         };
     }
 
-    // Alias methods for convenience (matching main.js usage)
+    /**
+     * 获取左手数据
+     * @returns {Object} 左手数据对象
+     * @returns {number} returns.gestureState - 手势状态（0.0-1.0）
+     * @returns {{x: number, y: number}} returns.position - 手部位置
+     * @returns {number} returns.rotationZ - 左右旋转值（-1.0 到 +1.0）
+     * @returns {number} returns.rotationX - 前后倾斜值（-1.0 到 +1.0）
+     */
     getLeftHand() {
         return this.getLeftHandData();
     }
 
+    /**
+     * 获取右手数据
+     * @returns {Object} 右手数据对象
+     * @returns {number} returns.gestureState - 手势状态（0.0-1.0，用于缩放控制）
+     * @returns {number} returns.fingers - 手指数量（0-4，用于形状切换）
+     * @returns {{x: number, y: number}} returns.position - 手部位置
+     */
     getRightHand() {
         return this.getRightHandData();
     }

@@ -1,7 +1,18 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
+/**
+ * 粒子系统类
+ * 管理粒子的创建、更新、形状变换、颜色设置和模型加载
+ * 支持多种形状、物理效果和自适应性能优化
+ * 
+ * @class ParticleSystem
+ */
 export class ParticleSystem {
+    /**
+     * 创建 ParticleSystem 实例
+     * @param {THREE.Scene} scene - Three.js 场景对象
+     */
     constructor(scene) {
         this.scene = scene;
         this.particles = null;
@@ -469,9 +480,9 @@ export class ParticleSystem {
             // 1: Sphere, 2: Heart, 3: Torus
             // Check if shape gesture is enabled
             if ((!this.gestureControlService || this.gestureControlService.isGestureEnabled('shape'))) {
-                if (shapeFingers === 1) this.setShape('sphere');
-                if (shapeFingers === 2) this.setShape('heart');
-                if (shapeFingers === 3) this.setShape('torus');
+                if (shapeFingers === 1) {this.setShape('sphere');}
+                if (shapeFingers === 2) {this.setShape('heart');}
+                if (shapeFingers === 3) {this.setShape('torus');}
             }
 
             // 移除breathing效果以避免闪烁，使用固定值

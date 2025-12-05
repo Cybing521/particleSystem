@@ -6,6 +6,16 @@ import { UIManager } from './ui/UIManager.js';
 import { DataVisualization } from './ui/DataVisualization.js';
 import './style.css';
 
+/**
+ * 检测是否为移动设备
+ * @returns {boolean} 如果是移动设备返回 true
+ */
+function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+           (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) ||
+           ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+}
+
 const app = document.querySelector('#app');
 
 // Scene Setup
@@ -17,13 +27,24 @@ scene.fog = new THREE.FogExp2(0xffffff, 0.02);
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.z = 5;
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+// 移动端性能优化：降低像素比和抗锯齿
+const isMobile = isMobileDevice();
+const renderer = new THREE.WebGLRenderer({ 
+    antialias: !isMobile, // 移动端关闭抗锯齿以提升性能
+    alpha: true 
+});
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// 移动端限制像素比以提升性能
+renderer.setPixelRatio(isMobile ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2));
 app.appendChild(renderer.domElement);
 
-// Particle System
+// Particle System - 移动端使用更少的初始粒子数
 const particleSystem = new ParticleSystem(scene);
+if (isMobile) {
+    // 移动端降低初始粒子数量
+    particleSystem.setParticleCount(2000);
+    console.log('[Main] Mobile device detected, using reduced particle count');
+}
 
 // Hand Tracker
 const handTracker = new HandTracker();
@@ -81,6 +102,28 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// 移动端优化：防止双击缩放
+if (isMobile) {
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', (event) => {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 300) {
+      event.preventDefault();
+    }
+    lastTouchEnd = now;
+  }, false);
+
+  // 移动端优化：防止滚动和缩放
+  document.addEventListener('touchmove', (event) => {
+    // 允许在 UI 元素上滚动
+    if (event.target.closest('.modal-content, .panel-content')) {
+      return;
+    }
+    // 防止在画布上滚动
+    event.preventDefault();
+  }, { passive: false });
+}
 
 // Animation Loop
 const clock = new THREE.Clock();

@@ -76,7 +76,7 @@ export class TutorialService {
      * 下一步
      */
     nextStep() {
-        if (!this.currentTutorial) return null;
+        if (!this.currentTutorial) {return null;}
         
         if (this.tutorialStep < this.currentTutorial.steps.length - 1) {
             this.tutorialStep++;
@@ -91,7 +91,7 @@ export class TutorialService {
      * 上一步
      */
     previousStep() {
-        if (!this.currentTutorial || this.tutorialStep === 0) return null;
+        if (!this.currentTutorial || this.tutorialStep === 0) {return null;}
         
         this.tutorialStep--;
         return this.currentTutorial.steps[this.tutorialStep];
@@ -101,7 +101,7 @@ export class TutorialService {
      * 获取当前步骤
      */
     getCurrentStep() {
-        if (!this.currentTutorial) return null;
+        if (!this.currentTutorial) {return null;}
         return this.currentTutorial.steps[this.tutorialStep];
     }
     

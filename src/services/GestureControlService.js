@@ -21,7 +21,7 @@ export class GestureControlService {
      * 设置手势的启用/禁用状态
      */
     setGestureEnabled(gesture, enabled) {
-        if (this.disabledGestures.hasOwnProperty(gesture)) {
+        if (Object.prototype.hasOwnProperty.call(this.disabledGestures, gesture)) {
             this.disabledGestures[gesture] = !enabled; // 反转逻辑：disabledGestures存储的是禁用状态
             this.saveSettings();
             return true;
@@ -33,7 +33,7 @@ export class GestureControlService {
      * 检查手势是否启用
      */
     isGestureEnabled(gesture) {
-        if (!this.disabledGestures.hasOwnProperty(gesture)) {
+        if (!Object.prototype.hasOwnProperty.call(this.disabledGestures, gesture)) {
             return true; // 默认启用未知手势
         }
         return !this.disabledGestures[gesture];
@@ -81,7 +81,7 @@ export class GestureControlService {
                 const parsed = JSON.parse(saved);
                 // 合并保存的设置，确保所有手势都有值
                 Object.keys(this.disabledGestures).forEach(key => {
-                    if (parsed.hasOwnProperty(key)) {
+                    if (Object.prototype.hasOwnProperty.call(parsed, key)) {
                         this.disabledGestures[key] = parsed[key];
                     }
                 });
