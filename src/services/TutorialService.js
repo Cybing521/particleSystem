@@ -29,28 +29,28 @@ export class TutorialService {
                 {
                     id: 'left-hand-rotation',
                     title: '左手控制旋转',
-                    description: '使用左手移动和倾斜来控制粒子系统的旋转',
+                    description: '使用左手移动和倾斜来控制粒子系统的旋转/倾斜（左手只负责旋转，即使只用一只手）',
                     gesture: 'leftHand',
                     icon: '👈'
                 },
                 {
                     id: 'right-hand-shape',
                     title: '右手控制形状',
-                    description: '伸出1根手指切换为球体，伸出2根手指切换为心形，伸出3根手指切换为圆环',
+                    description: '右手切换形状：1指球体、2指心形、3指圆环（右手只负责形状/缩放，即使只用一只手）',
                     gesture: 'fingers',
                     icon: '✋'
                 },
                 {
                     id: 'right-hand-scale',
                     title: '右手控制缩放',
-                    description: '捏合手指缩小，张开手指放大粒子系统',
+                    description: '右手捏合缩小、张开放大；左手不会触发缩放',
                     gesture: 'pinch',
                     icon: '🤏'
                 },
                 {
                     id: 'dual-hand',
                     title: '双手协同',
-                    description: '同时使用双手可以同时控制旋转、形状和缩放',
+                    description: '双手协同：左手旋转/倾斜，右手形状/缩放。单手时也保持各自职责，不混用。',
                     gesture: 'dualHand',
                     icon: '👐'
                 }

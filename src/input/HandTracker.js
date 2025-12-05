@@ -342,18 +342,25 @@ export class HandTracker {
                 }
                 
                 // Process hand results - support dual hands
+                const landmarks = handResults.landmarks || [];
+                const handedness = handResults.handedness || [];
+                
                 let leftHandData = null;
                 let rightHandData = null;
                 
-                if (handResults.landmarks && handResults.landmarks.length > 0) {
-                    if (handResults.landmarks.length === 2) {
-                        // Two hands detected - identify left and right
-                        const identified = this.identifyHands(handResults.landmarks[0], handResults.landmarks[1]);
-                        leftHandData = this.analyzeHand(identified.left, 'left');
-                        rightHandData = this.analyzeHand(identified.right, 'right');
+                if (landmarks.length > 0) {
+                    if (landmarks.length === 2) {
+                        // Two hands detected - identify left and right using handedness
+                        const identified = this.identifyHands(landmarks, handedness);
+                        if (identified.left) {
+                            leftHandData = this.analyzeHand(identified.left, 'left');
+                        }
+                        if (identified.right) {
+                            rightHandData = this.analyzeHand(identified.right, 'right');
+                        }
                         
                         // Debug: Log dual hand data periodically
-                        if (Math.random() < 0.05) {
+                        if (leftHandData && rightHandData && Math.random() < 0.05) {
                             console.log('[HandTracker] Dual hands detected:', {
                                 left: {
                                     position: { x: leftHandData.position.x.toFixed(2), y: leftHandData.position.y.toFixed(2) },
@@ -365,21 +372,25 @@ export class HandTracker {
                                 }
                             });
                         }
-                    } else if (handResults.landmarks.length === 1) {
-                        // Single hand detected - provide both rotation and scale control
-                        const handData = this.analyzeHand(handResults.landmarks[0]);
-                        // When only one hand is present, use it for both left and right hand functions
-                        // This allows rotation and scale control simultaneously
-                        leftHandData = {
-                            position: handData.position,
-                            rotationZ: handData.rotationZ,
-                            rotationX: handData.rotationX
-                        };
-                        rightHandData = {
-                            pinch: handData.pinch,
-                            fingers: handData.fingers,
-                            position: handData.position
-                        };
+                    } else if (landmarks.length === 1) {
+                        // Single hand detected - keep functional split based on handedness
+                        const handLabel = this.getHandLabel(handedness[0]) || null;
+                        const handData = this.analyzeHand(landmarks[0], handLabel || 'unknown');
+                        
+                        if (handLabel === 'left') {
+                            leftHandData = {
+                                position: handData.position,
+                                rotationZ: handData.rotationZ,
+                                rotationX: handData.rotationX
+                            };
+                        } else {
+                            // Treat unknown or explicit right as right-hand input (shape/scale)
+                            rightHandData = {
+                                pinch: handData.pinch,
+                                fingers: handData.fingers,
+                                position: handData.position
+                            };
+                        }
                     }
                 }
                 
@@ -397,24 +408,68 @@ export class HandTracker {
         }
     }
 
-    identifyHands(landmarks1, landmarks2) {
-        // Calculate center position for each hand
-        const center1 = {
-            x: (landmarks1[0].x + landmarks1[9].x) / 2,
-            y: (landmarks1[0].y + landmarks1[9].y) / 2
-        };
-        const center2 = {
-            x: (landmarks2[0].x + landmarks2[9].x) / 2,
-            y: (landmarks2[0].y + landmarks2[9].y) / 2
-        };
-        
-        // Left hand is typically on the left side of the screen (x < 0.5)
-        // Right hand is typically on the right side (x > 0.5)
-        if (center1.x < center2.x) {
-            return { left: landmarks1, right: landmarks2 };
-        } else {
-            return { left: landmarks2, right: landmarks1 };
+    getHandLabel(handednessEntry) {
+        if (!handednessEntry || !handednessEntry.length) return null;
+        const category = handednessEntry[0]?.categoryName || handednessEntry[0]?.displayName;
+        if (!category) return null;
+        const normalized = category.toLowerCase();
+        if (normalized.includes('left')) return 'left';
+        if (normalized.includes('right')) return 'right';
+        return null;
+    }
+
+    identifyHands(landmarksArray, handedness = []) {
+        const result = { left: null, right: null };
+
+        // 1) Prefer MediaPipe handedness classification
+        if (Array.isArray(handedness) && handedness.length === landmarksArray.length) {
+            handedness.forEach((entry, idx) => {
+                const label = this.getHandLabel(entry);
+                if (label === 'left' && !result.left) {
+                    result.left = landmarksArray[idx];
+                } else if (label === 'right' && !result.right) {
+                    result.right = landmarksArray[idx];
+                }
+            });
         }
+
+        // If both hands already classified, return early
+        if (result.left && result.right) {
+            return result;
+        }
+
+        // 2) Fallback: spatial heuristic (mirrored preview does not affect handedness output)
+        if (landmarksArray.length === 2) {
+            const center1 = {
+                x: (landmarksArray[0][0].x + landmarksArray[0][9].x) / 2,
+                y: (landmarksArray[0][0].y + landmarksArray[0][9].y) / 2
+            };
+            const center2 = {
+                x: (landmarksArray[1][0].x + landmarksArray[1][9].x) / 2,
+                y: (landmarksArray[1][0].y + landmarksArray[1][9].y) / 2
+            };
+
+            if (!result.left && !result.right) {
+                if (center1.x < center2.x) {
+                    result.left = landmarksArray[0];
+                    result.right = landmarksArray[1];
+                } else {
+                    result.left = landmarksArray[1];
+                    result.right = landmarksArray[0];
+                }
+            } else if (!result.left) {
+                result.left = result.right === landmarksArray[0] ? landmarksArray[1] : landmarksArray[0];
+            } else if (!result.right) {
+                result.right = result.left === landmarksArray[0] ? landmarksArray[1] : landmarksArray[0];
+            }
+        } else if (landmarksArray.length === 1) {
+            // Single hand fallback: if we still cannot classify, treat it as right-hand (shape/scale) to avoid unwanted rotation
+            if (!result.left && !result.right) {
+                result.right = landmarksArray[0];
+            }
+        }
+
+        return result;
     }
 
     analyzeHand(landmarks, handType = 'unknown') {

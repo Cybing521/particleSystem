@@ -437,12 +437,10 @@ export class ParticleSystem {
                 shapeFingers = 0;
                 targetScale = 0.5; // Default scale
             } else if (rightHand) {
-                // Only right hand detected - use for both rotation and scale
-                // When only one hand is present, HandTracker provides both leftHand and rightHand data
-                // But if only rightHand is available here, use it for both functions
-                targetRotY = (rightHand.position.x - 0.5) * Math.PI * 1.5;
-                targetRotX = (rightHand.position.y - 0.5) * Math.PI * 1.5;
-                targetRotZ = rotationZ * Math.PI;
+                // Only right hand detected - keep current rotation, only apply shape/scale
+                targetRotY = this.particles.rotation.y;
+                targetRotX = this.particles.rotation.x;
+                targetRotZ = this.particles.rotation.z;
                 shapeFingers = rightHand.fingers;
                 targetScale = 0.3 + (rightHand.gestureState * 2.7); // 0.3 to 3.0
             } else {
