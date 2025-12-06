@@ -1,6 +1,7 @@
 import { GestureCalibrationService } from '../services/GestureCalibrationService.js';
 import { TutorialService } from '../services/TutorialService.js';
 import { GestureControlService } from '../services/GestureControlService.js';
+import { PresetService } from '../services/PresetService.js';
 
 /**
  * UI 管理器类
@@ -25,6 +26,7 @@ export class UIManager {
         this.calibrationService = new GestureCalibrationService(handTracker);
         this.tutorialService = new TutorialService(handTracker, particleSystem);
         this.gestureControlService = new GestureControlService(handTracker);
+        this.presetService = new PresetService();
         
         // Load saved calibration
         this.calibrationService.loadFromLocalStorage();
@@ -86,6 +88,15 @@ export class UIManager {
                         <button data-distribution="clustered">聚集</button>
                     </div>
                 </div>
+                
+                <div class="control-group">
+                    <h3>控制模式</h3>
+                    <div class="mode-selector">
+                        <button data-mode="normal" class="active">普通</button>
+                        <button data-mode="controlled">第三视角</button>
+                        <button data-mode="boids">生物群落</button>
+                    </div>
+                </div>
 
                 <div class="control-group">
                     <h3>自定义模型</h3>
@@ -121,6 +132,14 @@ export class UIManager {
                             <input type="checkbox" id="gesture-shape" checked>
                             <span>形状切换</span>
                         </label>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <h3>预设模式</h3>
+                    <div class="preset-controls">
+                        <button id="save-preset-btn" class="preset-btn">保存配置</button>
+                        <button id="load-preset-btn" class="preset-btn" ${this.presetService.hasSavedConfig() ? '' : 'disabled'}>加载配置</button>
                     </div>
                 </div>
                 
@@ -383,6 +402,22 @@ export class UIManager {
             activeDistBtn.classList.add('active');
         }
         
+        // Control Mode Selector
+        const modeButtons = this.container.querySelectorAll('.mode-selector button');
+        if (modeButtons.length > 0) {
+            modeButtons.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    modeButtons.forEach(b => b.classList.remove('active'));
+                    e.target.classList.add('active');
+                    const mode = e.target.dataset.mode;
+                    console.log('[UIManager] Mode button clicked, setting mode to:', mode);
+                    this.particleSystem.setControlMode(mode);
+                });
+            });
+        } else {
+            console.warn('[UIManager] Mode selector buttons not found!');
+        }
+        
         // Gesture Control Checkboxes
         const gestureCheckboxes = {
             rotation: this.container.querySelector('#gesture-rotation'),
@@ -521,6 +556,38 @@ export class UIManager {
                 }
             }
         });
+
+        // Preset controls
+        const savePresetBtn = this.container.querySelector('#save-preset-btn');
+        const loadPresetBtn = this.container.querySelector('#load-preset-btn');
+        
+        if (savePresetBtn) {
+            savePresetBtn.addEventListener('click', () => {
+                const success = this.presetService.savePreset(this.particleSystem);
+                if (success) {
+                    this.showNotification('配置已保存', 'success');
+                    if (loadPresetBtn) {
+                        loadPresetBtn.disabled = false;
+                        loadPresetBtn.classList.remove('disabled');
+                    }
+                } else {
+                    this.showNotification('保存失败', 'error');
+                }
+            });
+        }
+        
+        if (loadPresetBtn) {
+            loadPresetBtn.addEventListener('click', () => {
+                const success = this.presetService.loadPreset(this.particleSystem);
+                if (success) {
+                    this.showNotification('配置已加载', 'success');
+                    // 更新UI以反映加载的配置
+                    this.updateUIFromParticleSystem();
+                } else {
+                    this.showNotification('加载失败：未找到保存的配置', 'error');
+                }
+            });
+        }
         
         // Show contextual hints periodically
         this.startHintSystem();
@@ -922,5 +989,68 @@ export class UIManager {
         setTimeout(() => {
             panel.style.transition = '';
         }, 300);
+    }
+
+    /**
+     * 更新UI以反映粒子系统的当前配置
+     */
+    updateUIFromParticleSystem() {
+        // 更新形状选择
+        const currentShape = this.particleSystem.getCurrentShape();
+        this.updateShapeSelection(currentShape);
+        
+        // 更新颜色选择器
+        const colorPicker = this.container.querySelector('#color-picker');
+        if (colorPicker && this.particleSystem.baseColor) {
+            const hex = this.particleSystem.baseColor.getHex();
+            const hexColor = `#${hex.toString(16).padStart(6, '0')}`;
+            colorPicker.value = hexColor;
+        }
+        
+        // 更新透明度滑块
+        const opacitySlider = this.container.querySelector('#opacity-slider');
+        const opacityValue = this.container.querySelector('#opacity-value');
+        const opacity = Math.round(this.particleSystem.getOpacity() * 100);
+        opacitySlider.value = opacity;
+        opacityValue.textContent = opacity;
+        
+        // 更新粒子数量滑块
+        const particleCountSlider = this.container.querySelector('#particle-count-slider');
+        const particleCountValue = this.container.querySelector('#particle-count-value');
+        const count = this.particleSystem.getParticleCount();
+        particleCountSlider.value = count;
+        particleCountValue.textContent = count;
+        
+        // 更新分布模式
+        const distributionMode = this.particleSystem.distributionMode;
+        const distributionButtons = this.container.querySelectorAll('.distribution-selector button');
+        distributionButtons.forEach(btn => {
+            if (btn.dataset.distribution === distributionMode) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
+
+    /**
+     * 显示通知消息
+     * @param {string} message - 消息内容
+     * @param {string} type - 消息类型 ('success', 'error', 'info')
+     */
+    showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+        this.container.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.classList.add('fade-out');
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 2000);
     }
 }

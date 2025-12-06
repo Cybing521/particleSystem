@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { ParticleControlMode } from './ParticleControlMode.js';
 
 /**
  * 粒子系统类
@@ -47,6 +48,10 @@ export class ParticleSystem {
         // Gesture control service reference (set externally)
         this.gestureControlService = null;
         
+        // Particle control mode (normal, controlled, boids)
+        this.controlMode = null;
+        this.currentMode = 'normal'; // 'normal', 'controlled', 'boids'
+        
         // Diffusion parameters
         this.diffusionSpeed = 0.02; // Base speed of particle movement
         this.attractionStrength = 0.001; // Strength of attraction to target shape
@@ -81,6 +86,8 @@ export class ParticleSystem {
 
     init() {
         this.createParticleSystem(this.count);
+        // 初始化控制模式
+        this.controlMode = new ParticleControlMode(this);
     }
 
         // 创建粒子系统（支持动态调整）
@@ -344,6 +351,10 @@ export class ParticleSystem {
         return this.count;
     }
     
+    /**
+     * 设置分布模式
+     * @param {string} mode - 分布模式 ('uniform', 'random', 'clustered')
+     */
     setDistributionMode(mode) {
         if (['uniform', 'random', 'clustered'].includes(mode)) {
             this.distributionMode = mode;
@@ -354,6 +365,46 @@ export class ParticleSystem {
     
     getDistributionMode() {
         return this.distributionMode;
+    }
+    
+    /**
+     * 设置控制模式
+     * @param {string} mode - 模式 ('normal', 'controlled', 'boids')
+     */
+    setControlMode(mode) {
+        console.log('[ParticleSystem] Setting control mode to:', mode);
+        this.currentMode = mode;
+        if (this.controlMode) {
+            this.controlMode.setMode(mode);
+            // 重新初始化粒子类型
+            if (mode === 'controlled' || mode === 'boids') {
+                this.controlMode.initializeParticleTypes();
+            }
+        } else {
+            console.warn('[ParticleSystem] controlMode is null, initializing...');
+            this.controlMode = new ParticleControlMode(this);
+            this.controlMode.setMode(mode);
+        }
+    }
+    
+    /**
+     * 设置控制目标（用于controlled和boids模式）
+     * @param {THREE.Vector3} target - 目标位置
+     */
+    setControlTarget(target) {
+        if (this.controlMode) {
+            this.controlMode.setControlTarget(target);
+        }
+    }
+    
+    /**
+     * 设置聚集度（用于controlled模式）
+     * @param {number} cohesion - 聚集度 (0.0-1.0)
+     */
+    setCohesion(cohesion) {
+        if (this.controlMode) {
+            this.controlMode.setCohesion(cohesion);
+        }
     }
     
     setGestureControlService(service) {
@@ -425,6 +476,73 @@ export class ParticleSystem {
                 this.frameCounter = 0;
             }
             
+            // 更新控制目标（用于controlled和boids模式）
+            if ((this.currentMode === 'controlled' || this.currentMode === 'boids') && this.controlMode) {
+                // 将手势位置映射到3D空间
+                let targetX, targetY, targetZ;
+                
+                if (leftHand) {
+                    // 使用左手位置控制目标
+                    targetX = (leftHand.position.x - 0.5) * 5;
+                    targetY = (0.5 - leftHand.position.y) * 5; // 反转Y轴
+                    targetZ = 0;
+                } else if (rightHand) {
+                    // 使用右手位置控制目标
+                    targetX = (rightHand.position.x - 0.5) * 5;
+                    targetY = (0.5 - rightHand.position.y) * 5;
+                    targetZ = 0;
+                } else {
+                    // 默认位置
+                    targetX = (handPos.x - 0.5) * 5;
+                    targetY = (0.5 - handPos.y) * 5;
+                    targetZ = 0;
+                }
+                
+                this.controlMode.setControlTarget(new THREE.Vector3(targetX, targetY, targetZ));
+                
+                // 设置聚集度（controlled模式）
+                if (this.currentMode === 'controlled' && rightHand) {
+                    const cohesion = 1.0 - rightHand.gestureState; // 捏合=聚集，张开=分散
+                    this.controlMode.setCohesion(cohesion);
+                }
+            }
+            
+            // 更新控制目标（用于controlled和boids模式）
+            if (this.currentMode === 'controlled' || this.currentMode === 'boids') {
+                // 确保controlMode已初始化
+                if (!this.controlMode) {
+                    this.controlMode = new ParticleControlMode(this);
+                }
+                
+                // 将手势位置映射到3D空间
+                let targetX, targetY, targetZ;
+                
+                if (leftHand) {
+                    // 使用左手位置控制目标
+                    targetX = (leftHand.position.x - 0.5) * 5;
+                    targetY = (0.5 - leftHand.position.y) * 5; // 反转Y轴
+                    targetZ = 0;
+                } else if (rightHand) {
+                    // 使用右手位置控制目标
+                    targetX = (rightHand.position.x - 0.5) * 5;
+                    targetY = (0.5 - rightHand.position.y) * 5;
+                    targetZ = 0;
+                } else {
+                    // 默认位置
+                    targetX = (handPos.x - 0.5) * 5;
+                    targetY = (0.5 - handPos.y) * 5;
+                    targetZ = 0;
+                }
+                
+                this.controlMode.setControlTarget(new THREE.Vector3(targetX, targetY, targetZ));
+                
+                // 设置聚集度（controlled模式）
+                if (this.currentMode === 'controlled' && rightHand) {
+                    const cohesion = 1.0 - rightHand.gestureState; // 捏合=聚集，张开=分散
+                    this.controlMode.setCohesion(cohesion);
+                }
+            }
+            
             // Dual hand control: Left hand controls position and rotation, Right hand controls shape and scale
             let targetRotY, targetRotX, targetRotZ;
             let targetScale;
@@ -492,7 +610,59 @@ export class ParticleSystem {
             const positions = this.geometry.attributes.position.array;
             const colors = this.geometry.attributes.color.array;
             const actualDeltaTime = 0.016; // Approximate frame time (60fps)
+            
+            // 性能优化：根据模式选择不同的更新方式
+            if (this.currentMode === 'controlled') {
+                // 确保controlMode已初始化
+                if (!this.controlMode) {
+                    console.warn('[ParticleSystem] controlMode not initialized, creating now...');
+                    this.controlMode = new ParticleControlMode(this);
+                }
+                
+                // 第三视角控制模式
+                this.controlMode.updateControlledMode(positions, this.velocities, actualDeltaTime);
+                
+                // 更新位置
+                for (let i = 0; i < this.count; i++) {
+                    const idx = i * 3;
+                    positions[idx] += this.velocities[idx] * actualDeltaTime * 60;
+                    positions[idx + 1] += this.velocities[idx + 1] * actualDeltaTime * 60;
+                    positions[idx + 2] += this.velocities[idx + 2] * actualDeltaTime * 60;
+                }
+                
+                // 更新颜色
+                this.controlMode.updateParticleColors(colors);
+                this.geometry.attributes.color.needsUpdate = true;
+                this.geometry.attributes.position.needsUpdate = true;
+                this.material.size = this.baseSize;
+                return; // 提前返回，跳过默认更新
+            } else if (this.currentMode === 'boids') {
+                // 确保controlMode已初始化
+                if (!this.controlMode) {
+                    console.warn('[ParticleSystem] controlMode not initialized, creating now...');
+                    this.controlMode = new ParticleControlMode(this);
+                }
+                
+                // Boids模式
+                this.controlMode.updateBoidsMode(positions, this.velocities, actualDeltaTime);
+                
+                // 更新位置
+                for (let i = 0; i < this.count; i++) {
+                    const idx = i * 3;
+                    positions[idx] += this.velocities[idx] * actualDeltaTime * 60;
+                    positions[idx + 1] += this.velocities[idx + 1] * actualDeltaTime * 60;
+                    positions[idx + 2] += this.velocities[idx + 2] * actualDeltaTime * 60;
+                }
+                
+                // 更新颜色
+                this.controlMode.updateParticleColors(colors);
+                this.geometry.attributes.color.needsUpdate = true;
+                this.geometry.attributes.position.needsUpdate = true;
+                this.material.size = this.baseSize;
+                return; // 提前返回，跳过默认更新
+            }
 
+            // 默认模式：原有的更新逻辑
             for (let i = 0; i < this.count; i++) {
                 const idx = i * 3;
                 
