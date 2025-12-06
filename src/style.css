@@ -107,15 +107,77 @@ canvas {
 }
 
 .panel-content {
-  padding: 10px;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
   transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-              opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-              padding-top 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-              padding-bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+              opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
+}
+
+/* Tab容器样式 */
+.tab-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.tab-buttons {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.5);
+  padding: 0 4px;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.tab-buttons::-webkit-scrollbar {
+  display: none;
+}
+
+.tab-btn {
+  flex: 1;
+  min-width: 60px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #888;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.tab-btn:hover {
+  color: var(--text-color);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.tab-btn.active {
+  color: var(--text-color);
+  border-bottom-color: var(--accent-color);
+  background: rgba(0, 0, 0, 0.02);
+  font-weight: 600;
+}
+
+.tab-content {
+  display: none;
+  padding: 10px;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.tab-content.active {
+  display: flex;
 }
 
 .controls-panel {
@@ -924,8 +986,19 @@ input[type="file"] {
   }
 
   .panel-content {
-    padding: 16px;
-    gap: 12px;
+    padding: 0;
+  }
+  
+  .tab-content {
+    padding: 12px;
+    gap: 10px;
+    max-height: calc(100vh - 180px);
+  }
+  
+  .tab-btn {
+    padding: 10px 8px;
+    font-size: 10px;
+    min-width: 50px;
   }
 
   /* 按钮和控件移动端优化 */
@@ -1038,7 +1111,18 @@ input[type="file"] {
   }
 
   .panel-content {
-    padding: 12px;
+    padding: 0;
+  }
+  
+  .tab-content {
+    padding: 10px;
+    max-height: calc(100vh - 160px);
+  }
+  
+  .tab-btn {
+    padding: 8px 6px;
+    font-size: 9px;
+    min-width: 45px;
   }
 
   button {

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 /**
  * 粒子控制模式
- * 实现第三视角粒子控制和生物群落效果
+ * 实现生物群落效果（Boids算法）
  * 
  * @class ParticleControlMode
  */
@@ -13,27 +13,24 @@ export class ParticleControlMode {
      */
     constructor(particleSystem) {
         this.particleSystem = particleSystem;
-        this.mode = 'normal'; // 'normal', 'controlled', 'boids'
-        
-        // 可控粒子配置
-        this.controlledRatio = 0.25; // 25% 可控粒子
-        this.particleTypes = null; // 粒子类型数组
+        this.mode = 'normal'; // 'normal', 'boids'
         
         // 控制目标
         this.controlTarget = new THREE.Vector3(0, 0, 0);
-        this.controlCohesion = 0.5; // 聚集度 0.0-1.0
         
         // Boids 参数
         this.boidsConfig = {
             separationWeight: 1.5,
             alignmentWeight: 1.0,
             cohesionWeight: 1.0,
-            targetWeight: 2.0,
+            targetWeight: 0.5, // 降低目标跟随权重，让粒子更自由
             desiredSeparation: 0.5,
             neighborRadius: 2.0,
-            maxSpeed: 0.1,
+            maxSpeed: 0.15, // 提高速度让运动更流畅
             maxForce: 0.05,
-            minSpeed: 0.02
+            minSpeed: 0.02,
+            boundaryRadius: 15.0, // 边界半径
+            boundaryForce: 0.1 // 边界排斥力强度
         };
         
         // 性能优化：空间分区
@@ -48,49 +45,69 @@ export class ParticleControlMode {
      * 初始化
      */
     init() {
-        this.initializeParticleTypes();
+        // Boids模式不需要粒子类型初始化
     }
     
     /**
-     * 初始化粒子类型
+     * 初始化粒子类型（Boids模式不需要，保留用于兼容性）
      */
     initializeParticleTypes() {
-        const count = this.particleSystem.count;
-        if (!count || count === 0) {
-            return; // 如果粒子数量为0，不初始化
-        }
-        
-        this.particleTypes = new Uint8Array(count);
-        
-        // 随机分配粒子类型
-        const controlledCount = Math.floor(count * this.controlledRatio);
-        for (let i = 0; i < count; i++) {
-            this.particleTypes[i] = i < controlledCount ? 1 : 0; // 1=可控, 0=环境
-        }
-        
-        // 随机打乱
-        for (let i = count - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [this.particleTypes[i], this.particleTypes[j]] = [this.particleTypes[j], this.particleTypes[i]];
-        }
+        // Boids模式不需要粒子类型
     }
     
     /**
      * 设置模式
-     * @param {string} mode - 模式 ('normal', 'controlled', 'boids')
+     * @param {string} mode - 模式 ('normal', 'boids')
      */
     setMode(mode) {
         console.log('[ParticleControlMode] Setting mode to:', mode, 'particle count:', this.particleSystem.count);
         this.mode = mode;
-        if (mode === 'controlled' || mode === 'boids') {
+        if (mode === 'boids') {
             if (this.particleSystem.count > 0) {
-                this.initializeParticleTypes();
-                const controlledCount = this.particleTypes ? this.particleTypes.filter(t => t === 1).length : 0;
-                console.log('[ParticleControlMode] Initialized particle types, total:', this.particleSystem.count, 'controlled:', controlledCount);
+                // Boids模式：重置粒子位置和速度，让它们自由游动
+                this.resetParticlesForBoids();
             } else {
-                console.warn('[ParticleControlMode] Particle count is 0, cannot initialize types');
+                console.warn('[ParticleControlMode] Particle count is 0, cannot reset particles');
             }
         }
+    }
+    
+    /**
+     * 重置粒子位置和速度用于Boids模式
+     * 让粒子从随机位置开始，避免被人脸形状影响
+     */
+    resetParticlesForBoids() {
+        const count = this.particleSystem.count;
+        const positions = this.particleSystem.geometry.attributes.position.array;
+        const velocities = this.particleSystem.velocities;
+        
+        // 在3D空间中随机分布粒子（在边界范围内）
+        const boundaryRadius = this.boidsConfig.boundaryRadius;
+        const spread = boundaryRadius * 0.8; // 分布范围（边界内80%）
+        
+        for (let i = 0; i < count; i++) {
+            const idx = i * 3;
+            
+            // 在球体内随机分布（使用球坐标）
+            const r = Math.cbrt(Math.random()) * spread; // 立方根确保均匀分布
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            
+            positions[idx] = r * Math.sin(phi) * Math.cos(theta);
+            positions[idx + 1] = r * Math.sin(phi) * Math.sin(theta);
+            positions[idx + 2] = r * Math.cos(phi);
+            
+            // 随机初始速度
+            const speed = 0.05;
+            const angle1 = Math.random() * Math.PI * 2;
+            const angle2 = Math.random() * Math.PI * 2;
+            velocities[idx] = Math.cos(angle1) * Math.sin(angle2) * speed;
+            velocities[idx + 1] = Math.sin(angle1) * speed;
+            velocities[idx + 2] = Math.cos(angle1) * Math.cos(angle2) * speed;
+        }
+        
+        this.particleSystem.geometry.attributes.position.needsUpdate = true;
+        console.log('[ParticleControlMode] Reset particles for Boids mode, boundary radius:', boundaryRadius);
     }
     
     /**
@@ -101,154 +118,6 @@ export class ParticleControlMode {
         this.controlTarget.copy(target);
     }
     
-    /**
-     * 设置聚集度
-     * @param {number} cohesion - 聚集度 (0.0-1.0)
-     */
-    setCohesion(cohesion) {
-        this.controlCohesion = Math.max(0, Math.min(1, cohesion));
-    }
-    
-    /**
-     * 更新粒子（第三视角控制模式）
-     * @param {Float32Array} positions - 位置数组
-     * @param {Float32Array} velocities - 速度数组
-     * @param {number} deltaTime - 时间增量
-     */
-    updateControlledMode(positions, velocities, deltaTime) {
-        const count = this.particleSystem.count;
-        if (!count || count === 0) {
-            return;
-        }
-        
-        // 确保粒子类型已初始化
-        if (!this.particleTypes || this.particleTypes.length !== count) {
-            console.log('[ParticleControlMode] Re-initializing particle types, count:', count);
-            this.initializeParticleTypes();
-        }
-        
-        const controlledSpeed = 0.05;
-        const environmentRandomness = 0.01;
-        const repulsionRadius = 1.5;
-        const repulsionStrength = 0.001;
-        
-        // 构建空间分区（简化版：只用于可控粒子）
-        const controlledParticles = [];
-        for (let i = 0; i < count; i++) {
-            if (this.particleTypes && this.particleTypes[i] === 1) {
-                controlledParticles.push(i);
-            }
-        }
-        
-        if (controlledParticles.length === 0) {
-            console.warn('[ParticleControlMode] No controlled particles found! Re-initializing...');
-            this.initializeParticleTypes();
-            // 重新收集可控粒子
-            for (let i = 0; i < count; i++) {
-                if (this.particleTypes && this.particleTypes[i] === 1) {
-                    controlledParticles.push(i);
-                }
-            }
-        }
-        
-        // 更新可控粒子
-        for (let i = 0; i < controlledParticles.length; i++) {
-            const idx = controlledParticles[i] * 3;
-            const px = positions[idx];
-            const py = positions[idx + 1];
-            const pz = positions[idx + 2];
-            
-            // 计算到目标的方向
-            const dx = this.controlTarget.x - px;
-            const dy = this.controlTarget.y - py;
-            const dz = this.controlTarget.z - pz;
-            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            
-            if (dist > 0.01) {
-                // 跟随目标
-                const followStrength = controlledSpeed * (1.0 - this.controlCohesion * 0.5);
-                velocities[idx] += (dx / dist) * followStrength * deltaTime * 60;
-                velocities[idx + 1] += (dy / dist) * followStrength * deltaTime * 60;
-                velocities[idx + 2] += (dz / dist) * followStrength * deltaTime * 60;
-            }
-            
-            // 聚集力（与其他可控粒子）
-            if (this.controlCohesion > 0.1) {
-                let cohesionX = 0, cohesionY = 0, cohesionZ = 0;
-                let neighborCount = 0;
-                
-                for (let j = 0; j < controlledParticles.length && neighborCount < 10; j++) {
-                    if (i === j) {continue;}
-                    const jIdx = controlledParticles[j] * 3;
-                    const jx = positions[jIdx];
-                    const jy = positions[jIdx + 1];
-                    const jz = positions[jIdx + 2];
-                    
-                    const dist = Math.sqrt(
-                        (px - jx) ** 2 + (py - jy) ** 2 + (pz - jz) ** 2
-                    );
-                    
-                    if (dist < 2.0 && dist > 0.01) {
-                        cohesionX += (jx - px) / dist;
-                        cohesionY += (jy - py) / dist;
-                        cohesionZ += (jz - pz) / dist;
-                        neighborCount++;
-                    }
-                }
-                
-                if (neighborCount > 0) {
-                    const cohesionForce = this.controlCohesion * 0.02;
-                    velocities[idx] += (cohesionX / neighborCount) * cohesionForce * deltaTime * 60;
-                    velocities[idx + 1] += (cohesionY / neighborCount) * cohesionForce * deltaTime * 60;
-                    velocities[idx + 2] += (cohesionZ / neighborCount) * cohesionForce * deltaTime * 60;
-                }
-            }
-        }
-        
-        // 更新环境粒子（随机运动 + 避免可控粒子）
-        for (let i = 0; i < count; i++) {
-            if (this.particleTypes && this.particleTypes[i] === 0) {
-                const idx = i * 3;
-                const px = positions[idx];
-                const py = positions[idx + 1];
-                const pz = positions[idx + 2];
-                
-                // 随机布朗运动
-                velocities[idx] += (Math.random() - 0.5) * environmentRandomness * deltaTime * 60;
-                velocities[idx + 1] += (Math.random() - 0.5) * environmentRandomness * deltaTime * 60;
-                velocities[idx + 2] += (Math.random() - 0.5) * environmentRandomness * deltaTime * 60;
-                
-                // 避免可控粒子（简化：只检查最近的几个）
-                let avoidanceX = 0, avoidanceY = 0, avoidanceZ = 0;
-                let avoidanceCount = 0;
-                
-                for (let j = 0; j < Math.min(controlledParticles.length, 5); j++) {
-                    const jIdx = controlledParticles[j] * 3;
-                    const jx = positions[jIdx];
-                    const jy = positions[jIdx + 1];
-                    const jz = positions[jIdx + 2];
-                    
-                    const dist = Math.sqrt(
-                        (px - jx) ** 2 + (py - jy) ** 2 + (pz - jz) ** 2
-                    );
-                    
-                    if (dist < repulsionRadius && dist > 0.01) {
-                        const force = repulsionStrength / (dist * dist);
-                        avoidanceX += (px - jx) / dist * force;
-                        avoidanceY += (py - jy) / dist * force;
-                        avoidanceZ += (pz - jz) / dist * force;
-                        avoidanceCount++;
-                    }
-                }
-                
-                if (avoidanceCount > 0) {
-                    velocities[idx] += avoidanceX * deltaTime * 60;
-                    velocities[idx + 1] += avoidanceY * deltaTime * 60;
-                    velocities[idx + 2] += avoidanceZ * deltaTime * 60;
-                }
-            }
-        }
-    }
     
     /**
      * 更新粒子（Boids模式）
@@ -271,22 +140,29 @@ export class ParticleControlMode {
             const py = positions[idx + 1];
             const pz = positions[idx + 2];
             
-            // 查找邻居（简化：只检查最近的N个粒子）
+            // 性能优化：使用空间跳跃和距离平方避免sqrt
             const neighbors = [];
-            const maxNeighbors = 15; // 限制邻居数量以提升性能
+            const maxNeighbors = 20; // 增加邻居数量但通过优化减少计算
+            const neighborRadiusSq = config.neighborRadius * config.neighborRadius;
             
-            for (let j = 0; j < count && neighbors.length < maxNeighbors; j++) {
+            // 空间跳跃优化：每N个粒子检查一次，大幅减少计算量
+            const skipStep = Math.max(1, Math.floor(count / 200)); // 最多检查200个候选粒子
+            
+            for (let j = 0; j < count && neighbors.length < maxNeighbors; j += skipStep) {
                 if (i === j) {continue;}
                 const jIdx = j * 3;
                 const jx = positions[jIdx];
                 const jy = positions[jIdx + 1];
                 const jz = positions[jIdx + 2];
                 
-                const dist = Math.sqrt(
-                    (px - jx) ** 2 + (py - jy) ** 2 + (pz - jz) ** 2
-                );
+                // 使用平方距离避免sqrt，大幅提升性能
+                const dx = px - jx;
+                const dy = py - jy;
+                const dz = pz - jz;
+                const distSq = dx * dx + dy * dy + dz * dz;
                 
-                if (dist < config.neighborRadius) {
+                if (distSq < neighborRadiusSq && distSq > 0.0001) {
+                    const dist = Math.sqrt(distSq);
                     neighbors.push({
                         idx: jIdx,
                         position: new THREE.Vector3(jx, jy, jz),
@@ -300,33 +176,54 @@ export class ParticleControlMode {
                 }
             }
             
-            // 计算Boids力
-            const currentPos = new THREE.Vector3(px, py, pz);
-            const currentVel = new THREE.Vector3(velocities[idx], velocities[idx + 1], velocities[idx + 2]);
+            // 计算Boids力（复用Vector3对象减少GC压力）
+            if (!this._tempVec1) {
+                this._tempVec1 = new THREE.Vector3();
+                this._tempVec2 = new THREE.Vector3();
+                this._tempVec3 = new THREE.Vector3();
+                this._tempVec4 = new THREE.Vector3();
+                this._tempVec5 = new THREE.Vector3();
+            }
+            
+            const currentPos = this._tempVec1.set(px, py, pz);
+            const currentVel = this._tempVec2.set(velocities[idx], velocities[idx + 1], velocities[idx + 2]);
             
             const separation = this.calculateSeparation(
                 currentPos,
                 neighbors,
-                config
+                config,
+                this._tempVec3
             );
             const alignment = this.calculateAlignment(
                 currentVel,
                 neighbors,
-                config
+                config,
+                this._tempVec4
             );
             const cohesion = this.calculateCohesion(
                 currentPos,
                 neighbors,
-                config
-            );
-            const target = this.calculateTargetSeek(
-                currentPos,
-                this.controlTarget,
-                config
+                config,
+                this._tempVec5
             );
             
-            // 应用力
-            const totalForce = new THREE.Vector3(0, 0, 0);
+            // 只在有手势控制时才应用目标跟随力
+            let target = this._tempVec2.set(0, 0, 0);
+            const targetDist = this.controlTarget.length();
+            if (targetDist > 0.1) { // 只有目标位置有意义时才跟随
+                target = this.calculateTargetSeek(
+                    currentPos,
+                    this.controlTarget,
+                    config,
+                    this._tempVec2
+                );
+            }
+            
+            // 应用力（复用totalForce对象）
+            if (!this._totalForce) {
+                this._totalForce = new THREE.Vector3();
+            }
+            const totalForce = this._totalForce.set(0, 0, 0);
             totalForce.add(separation.multiplyScalar(config.separationWeight));
             totalForce.add(alignment.multiplyScalar(config.alignmentWeight));
             totalForce.add(cohesion.multiplyScalar(config.cohesionWeight));
@@ -357,120 +254,166 @@ export class ParticleControlMode {
                 velocities[idx + 1] *= scale;
                 velocities[idx + 2] *= scale;
             }
+            
+            // 边界限制：如果粒子超出边界，施加向内的力
+            const distFromCenter = Math.sqrt(px * px + py * py + pz * pz);
+            if (distFromCenter > config.boundaryRadius) {
+                // 计算指向中心的单位向量
+                const centerDirX = -px / distFromCenter;
+                const centerDirY = -py / distFromCenter;
+                const centerDirZ = -pz / distFromCenter;
+                
+                // 计算超出边界的距离
+                const overshoot = distFromCenter - config.boundaryRadius;
+                
+                // 施加边界排斥力（越远力越大）
+                const boundaryForce = overshoot * config.boundaryForce;
+                velocities[idx] += centerDirX * boundaryForce * deltaTime * 60;
+                velocities[idx + 1] += centerDirY * boundaryForce * deltaTime * 60;
+                velocities[idx + 2] += centerDirZ * boundaryForce * deltaTime * 60;
+            }
         }
     }
     
     /**
      * 计算分离力
+     * @param {THREE.Vector3} position - 当前位置
+     * @param {Array} neighbors - 邻居列表
+     * @param {Object} config - 配置
+     * @param {THREE.Vector3} result - 结果向量（复用对象）
      */
-    calculateSeparation(position, neighbors, config) {
-        const steer = new THREE.Vector3(0, 0, 0);
+    calculateSeparation(position, neighbors, config, result) {
+        result.set(0, 0, 0);
         let count = 0;
         
-        neighbors.forEach(neighbor => {
+        for (let i = 0; i < neighbors.length; i++) {
+            const neighbor = neighbors[i];
             if (neighbor.distance > 0 && neighbor.distance < config.desiredSeparation) {
-                const diff = position.clone().sub(neighbor.position);
-                diff.normalize();
-                diff.divideScalar(neighbor.distance);
-                steer.add(diff);
+                result.x += (position.x - neighbor.position.x) / neighbor.distance;
+                result.y += (position.y - neighbor.position.y) / neighbor.distance;
+                result.z += (position.z - neighbor.position.z) / neighbor.distance;
                 count++;
-            }
-        });
-        
-        if (count > 0) {
-            steer.divideScalar(count);
-            steer.normalize();
-            steer.multiplyScalar(config.maxSpeed);
-            steer.sub(new THREE.Vector3(0, 0, 0)); // 简化：假设当前速度为0
-            if (steer.length() > config.maxForce) {
-                steer.normalize().multiplyScalar(config.maxForce);
             }
         }
         
-        return steer;
+        if (count > 0) {
+            result.divideScalar(count);
+            const len = result.length();
+            if (len > 0.001) {
+                result.normalize().multiplyScalar(config.maxSpeed);
+                if (result.length() > config.maxForce) {
+                    result.normalize().multiplyScalar(config.maxForce);
+                }
+            }
+        }
+        
+        return result;
     }
     
     /**
      * 计算对齐力
+     * @param {THREE.Vector3} currentVelocity - 当前速度
+     * @param {Array} neighbors - 邻居列表
+     * @param {Object} config - 配置
+     * @param {THREE.Vector3} result - 结果向量（复用对象）
      */
-    calculateAlignment(currentVelocity, neighbors, config) {
-        const sum = new THREE.Vector3(0, 0, 0);
+    calculateAlignment(currentVelocity, neighbors, config, result) {
+        result.set(0, 0, 0);
         let count = 0;
         
-        neighbors.forEach(neighbor => {
-            sum.add(neighbor.velocity);
+        for (let i = 0; i < neighbors.length; i++) {
+            const neighbor = neighbors[i];
+            result.x += neighbor.velocity.x;
+            result.y += neighbor.velocity.y;
+            result.z += neighbor.velocity.z;
             count++;
-        });
-        
-        if (count > 0) {
-            sum.divideScalar(count);
-            sum.normalize();
-            sum.multiplyScalar(config.maxSpeed);
-            const steer = sum.sub(currentVelocity);
-            if (steer.length() > config.maxForce) {
-                steer.normalize().multiplyScalar(config.maxForce);
-            }
-            return steer;
         }
         
-        return new THREE.Vector3(0, 0, 0);
+        if (count > 0) {
+            result.divideScalar(count);
+            const len = result.length();
+            if (len > 0.001) {
+                result.normalize().multiplyScalar(config.maxSpeed);
+                result.sub(currentVelocity);
+                if (result.length() > config.maxForce) {
+                    result.normalize().multiplyScalar(config.maxForce);
+                }
+            }
+        }
+        
+        return result;
     }
     
     /**
      * 计算聚集力
+     * @param {THREE.Vector3} position - 当前位置
+     * @param {Array} neighbors - 邻居列表
+     * @param {Object} config - 配置
+     * @param {THREE.Vector3} result - 结果向量（复用对象）
      */
-    calculateCohesion(position, neighbors, config) {
-        const sum = new THREE.Vector3(0, 0, 0);
+    calculateCohesion(position, neighbors, config, result) {
+        result.set(0, 0, 0);
         let count = 0;
         
-        neighbors.forEach(neighbor => {
-            sum.add(neighbor.position);
+        for (let i = 0; i < neighbors.length; i++) {
+            const neighbor = neighbors[i];
+            result.x += neighbor.position.x;
+            result.y += neighbor.position.y;
+            result.z += neighbor.position.z;
             count++;
-        });
-        
-        if (count > 0) {
-            sum.divideScalar(count);
-            return this.seek(position, sum, config);
         }
         
-        return new THREE.Vector3(0, 0, 0);
+        if (count > 0) {
+            result.divideScalar(count);
+            return this.seek(position, result, config, result);
+        }
+        
+        return result.set(0, 0, 0);
     }
     
     /**
      * 计算目标跟随力
+     * @param {THREE.Vector3} position - 当前位置
+     * @param {THREE.Vector3} target - 目标位置
+     * @param {Object} config - 配置
+     * @param {THREE.Vector3} result - 结果向量（复用对象）
      */
-    calculateTargetSeek(position, target, config) {
-        return this.seek(position, target, config);
+    calculateTargetSeek(position, target, config, result) {
+        return this.seek(position, target, config, result);
     }
     
     /**
-     * 寻求目标
+     * 计算朝向目标的力
+     * @param {THREE.Vector3} position - 当前位置
+     * @param {THREE.Vector3} target - 目标位置
+     * @param {Object} config - 配置
+     * @param {THREE.Vector3} result - 结果向量（复用对象）
      */
-    seek(position, target, config) {
-        const desired = target.clone().sub(position);
-        const dist = desired.length();
+    seek(position, target, config, result) {
+        result.x = target.x - position.x;
+        result.y = target.y - position.y;
+        result.z = target.z - position.z;
+        const dist = result.length();
         
         if (dist > 0.01) {
-            desired.normalize();
+            result.normalize();
             if (dist < 2.0) {
-                desired.multiplyScalar(config.maxSpeed * (dist / 2.0));
+                result.multiplyScalar(config.maxSpeed * (dist / 2.0));
             } else {
-                desired.multiplyScalar(config.maxSpeed);
+                result.multiplyScalar(config.maxSpeed);
             }
             
-            // 简化：假设当前速度为0（实际应该减去当前速度）
-            const steer = desired.clone();
-            if (steer.length() > config.maxForce) {
-                steer.normalize().multiplyScalar(config.maxForce);
+            if (result.length() > config.maxForce) {
+                result.normalize().multiplyScalar(config.maxForce);
             }
-            return steer;
+            return result;
         }
         
-        return new THREE.Vector3(0, 0, 0);
+        return result.set(0, 0, 0);
     }
     
     /**
-     * 更新粒子颜色（根据类型）
+     * 更新粒子颜色（Boids模式）
      * @param {Float32Array} colors - 颜色数组
      */
     updateParticleColors(colors) {
@@ -484,23 +427,10 @@ export class ParticleControlMode {
             return;
         }
         
-        for (let i = 0; i < count; i++) {
-            const colorIdx = i * 3;
-            
-            if (this.mode === 'controlled') {
-                if (this.particleTypes && this.particleTypes.length > i && this.particleTypes[i] === 1) {
-                    // 可控粒子：更亮、更饱和（金色/蓝色）
-                    colors[colorIdx] = Math.min(baseColor.r * 1.5, 1.0);
-                    colors[colorIdx + 1] = Math.min(baseColor.g * 1.3, 1.0);
-                    colors[colorIdx + 2] = Math.min(baseColor.b * 1.2, 1.0);
-                } else {
-                    // 环境粒子：较暗、低饱和度
-                    colors[colorIdx] = baseColor.r * 0.6;
-                    colors[colorIdx + 1] = baseColor.g * 0.6;
-                    colors[colorIdx + 2] = baseColor.b * 0.6;
-                }
-            } else if (this.mode === 'boids') {
-                // Boids模式：根据位置渐变（头部亮，尾部暗）
+        if (this.mode === 'boids') {
+            // Boids模式：根据位置渐变（头部亮，尾部暗）
+            for (let i = 0; i < count; i++) {
+                const colorIdx = i * 3;
                 const progress = i / count;
                 const brightness = 1.0 - progress * 0.5;
                 colors[colorIdx] = Math.min(baseColor.r * brightness, 1.0);

@@ -48,9 +48,9 @@ export class ParticleSystem {
         // Gesture control service reference (set externally)
         this.gestureControlService = null;
         
-        // Particle control mode (normal, controlled, boids)
+        // Particle control mode (normal, boids)
         this.controlMode = null;
-        this.currentMode = 'normal'; // 'normal', 'controlled', 'boids'
+        this.currentMode = 'normal'; // 'normal', 'boids'
         
         // Diffusion parameters
         this.diffusionSpeed = 0.02; // Base speed of particle movement
@@ -369,17 +369,13 @@ export class ParticleSystem {
     
     /**
      * 设置控制模式
-     * @param {string} mode - 模式 ('normal', 'controlled', 'boids')
+     * @param {string} mode - 模式 ('normal', 'boids')
      */
     setControlMode(mode) {
         console.log('[ParticleSystem] Setting control mode to:', mode);
         this.currentMode = mode;
         if (this.controlMode) {
             this.controlMode.setMode(mode);
-            // 重新初始化粒子类型
-            if (mode === 'controlled' || mode === 'boids') {
-                this.controlMode.initializeParticleTypes();
-            }
         } else {
             console.warn('[ParticleSystem] controlMode is null, initializing...');
             this.controlMode = new ParticleControlMode(this);
@@ -388,22 +384,12 @@ export class ParticleSystem {
     }
     
     /**
-     * 设置控制目标（用于controlled和boids模式）
+     * 设置控制目标（用于boids模式）
      * @param {THREE.Vector3} target - 目标位置
      */
     setControlTarget(target) {
         if (this.controlMode) {
             this.controlMode.setControlTarget(target);
-        }
-    }
-    
-    /**
-     * 设置聚集度（用于controlled模式）
-     * @param {number} cohesion - 聚集度 (0.0-1.0)
-     */
-    setCohesion(cohesion) {
-        if (this.controlMode) {
-            this.controlMode.setCohesion(cohesion);
         }
     }
     
@@ -476,39 +462,9 @@ export class ParticleSystem {
                 this.frameCounter = 0;
             }
             
-            // 更新控制目标（用于controlled和boids模式）
-            if ((this.currentMode === 'controlled' || this.currentMode === 'boids') && this.controlMode) {
-                // 将手势位置映射到3D空间
-                let targetX, targetY, targetZ;
-                
-                if (leftHand) {
-                    // 使用左手位置控制目标
-                    targetX = (leftHand.position.x - 0.5) * 5;
-                    targetY = (0.5 - leftHand.position.y) * 5; // 反转Y轴
-                    targetZ = 0;
-                } else if (rightHand) {
-                    // 使用右手位置控制目标
-                    targetX = (rightHand.position.x - 0.5) * 5;
-                    targetY = (0.5 - rightHand.position.y) * 5;
-                    targetZ = 0;
-                } else {
-                    // 默认位置
-                    targetX = (handPos.x - 0.5) * 5;
-                    targetY = (0.5 - handPos.y) * 5;
-                    targetZ = 0;
-                }
-                
-                this.controlMode.setControlTarget(new THREE.Vector3(targetX, targetY, targetZ));
-                
-                // 设置聚集度（controlled模式）
-                if (this.currentMode === 'controlled' && rightHand) {
-                    const cohesion = 1.0 - rightHand.gestureState; // 捏合=聚集，张开=分散
-                    this.controlMode.setCohesion(cohesion);
-                }
-            }
             
-            // 更新控制目标（用于controlled和boids模式）
-            if (this.currentMode === 'controlled' || this.currentMode === 'boids') {
+            // 更新控制目标（用于boids模式）
+            if (this.currentMode === 'boids') {
                 // 确保controlMode已初始化
                 if (!this.controlMode) {
                     this.controlMode = new ParticleControlMode(this);
@@ -535,18 +491,11 @@ export class ParticleSystem {
                 }
                 
                 this.controlMode.setControlTarget(new THREE.Vector3(targetX, targetY, targetZ));
-                
-                // 设置聚集度（controlled模式）
-                if (this.currentMode === 'controlled' && rightHand) {
-                    const cohesion = 1.0 - rightHand.gestureState; // 捏合=聚集，张开=分散
-                    this.controlMode.setCohesion(cohesion);
-                }
             }
             
-            // Dual hand control: Left hand controls position and rotation, Right hand controls shape and scale
+            // Dual hand control: Left hand controls position and rotation, Right hand controls scale
             let targetRotY, targetRotX, targetRotZ;
             let targetScale;
-            let shapeFingers;
             
             if (leftHand && rightHand) {
                 // Both hands detected - use dual hand control
@@ -555,29 +504,25 @@ export class ParticleSystem {
                 targetRotX = (leftHand.position.y - 0.5) * Math.PI * 1.5;
                 targetRotZ = leftHand.rotationZ * Math.PI;
                 
-                // Right hand: shape and scale (调整缩放范围：0.3 到 3.0)
-                shapeFingers = rightHand.fingers;
+                // Right hand: scale (调整缩放范围：0.3 到 3.0)
                 targetScale = 0.5 + (rightHand.gestureState * 2.7); // 0.3 to 3.0
             } else if (leftHand) {
                 // Only left hand detected - use for rotation, default scale
                 targetRotY = (leftHand.position.x - 0.5) * Math.PI * 1.5;
                 targetRotX = (leftHand.position.y - 0.5) * Math.PI * 1.5;
                 targetRotZ = leftHand.rotationZ * Math.PI;
-                shapeFingers = 0;
                 targetScale = 0.5; // Default scale
             } else if (rightHand) {
-                // Only right hand detected - keep current rotation, only apply shape/scale
+                // Only right hand detected - keep current rotation, only apply scale
                 targetRotY = this.particles.rotation.y;
                 targetRotX = this.particles.rotation.x;
                 targetRotZ = this.particles.rotation.z;
-                shapeFingers = rightHand.fingers;
                 targetScale = 0.3 + (rightHand.gestureState * 2.7); // 0.3 to 3.0
             } else {
                 // No hands or legacy single hand mode
                 targetRotY = (handPos.x - 0.5) * Math.PI * 1.5;
                 targetRotX = (handPos.y - 0.5) * Math.PI * 1.5;
                 targetRotZ = rotationZ * Math.PI;
-                shapeFingers = fingers;
                 targetScale = 0.3 + (gestureState * 2.7); // 0.3 to 3.0
             }
 
@@ -594,15 +539,6 @@ export class ParticleSystem {
                 this.particles.rotation.y += 0.002;
             }
 
-            // Finger Shape Switching (from right hand)
-            // 1: Sphere, 2: Heart, 3: Torus
-            // Check if shape gesture is enabled
-            if ((!this.gestureControlService || this.gestureControlService.isGestureEnabled('shape'))) {
-                if (shapeFingers === 1) {this.setShape('sphere');}
-                if (shapeFingers === 2) {this.setShape('heart');}
-                if (shapeFingers === 3) {this.setShape('torus');}
-            }
-
             // 移除breathing效果以避免闪烁，使用固定值
             this.material.opacity = this.baseOpacity;
 
@@ -612,31 +548,7 @@ export class ParticleSystem {
             const actualDeltaTime = 0.016; // Approximate frame time (60fps)
             
             // 性能优化：根据模式选择不同的更新方式
-            if (this.currentMode === 'controlled') {
-                // 确保controlMode已初始化
-                if (!this.controlMode) {
-                    console.warn('[ParticleSystem] controlMode not initialized, creating now...');
-                    this.controlMode = new ParticleControlMode(this);
-                }
-                
-                // 第三视角控制模式
-                this.controlMode.updateControlledMode(positions, this.velocities, actualDeltaTime);
-                
-                // 更新位置
-                for (let i = 0; i < this.count; i++) {
-                    const idx = i * 3;
-                    positions[idx] += this.velocities[idx] * actualDeltaTime * 60;
-                    positions[idx + 1] += this.velocities[idx + 1] * actualDeltaTime * 60;
-                    positions[idx + 2] += this.velocities[idx + 2] * actualDeltaTime * 60;
-                }
-                
-                // 更新颜色
-                this.controlMode.updateParticleColors(colors);
-                this.geometry.attributes.color.needsUpdate = true;
-                this.geometry.attributes.position.needsUpdate = true;
-                this.material.size = this.baseSize;
-                return; // 提前返回，跳过默认更新
-            } else if (this.currentMode === 'boids') {
+            if (this.currentMode === 'boids') {
                 // 确保controlMode已初始化
                 if (!this.controlMode) {
                     console.warn('[ParticleSystem] controlMode not initialized, creating now...');
@@ -646,12 +558,24 @@ export class ParticleSystem {
                 // Boids模式
                 this.controlMode.updateBoidsMode(positions, this.velocities, actualDeltaTime);
                 
-                // 更新位置
+                // 更新位置（带边界限制）
+                const boundaryRadius = this.controlMode.boidsConfig.boundaryRadius;
                 for (let i = 0; i < this.count; i++) {
                     const idx = i * 3;
                     positions[idx] += this.velocities[idx] * actualDeltaTime * 60;
                     positions[idx + 1] += this.velocities[idx + 1] * actualDeltaTime * 60;
                     positions[idx + 2] += this.velocities[idx + 2] * actualDeltaTime * 60;
+                    
+                    // 硬边界：如果超出边界，直接拉回边界内
+                    const dist = Math.sqrt(
+                        positions[idx] ** 2 + positions[idx + 1] ** 2 + positions[idx + 2] ** 2
+                    );
+                    if (dist > boundaryRadius) {
+                        const scale = boundaryRadius / dist;
+                        positions[idx] *= scale;
+                        positions[idx + 1] *= scale;
+                        positions[idx + 2] *= scale;
+                    }
                 }
                 
                 // 更新颜色

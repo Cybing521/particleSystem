@@ -52,101 +52,117 @@ export class UIManager {
                 <button id="collapse-btn" class="collapse-btn" title="折叠/展开">−</button>
             </div>
             <div class="panel-content">
-                <div class="control-group">
-                    <h3>形状</h3>
-                    <div class="shape-selector">
-                        <button data-shape="sphere" class="active">球体</button>
-                        <button data-shape="heart">心形</button>
-                        <button data-shape="torus">圆环</button>
+                <div class="tab-container">
+                    <div class="tab-buttons">
+                        <button class="tab-btn active" data-tab="basic">基础设置</button>
+                        <button class="tab-btn" data-tab="advanced">高级设置</button>
+                        <button class="tab-btn" data-tab="gesture">手势控制</button>
+                        <button class="tab-btn" data-tab="system">系统功能</button>
                     </div>
-                </div>
-                
-                <div class="control-group">
-                    <h3>颜色</h3>
-                    <div class="color-picker-wrapper">
-                        <input type="color" id="color-picker" value="#222222">
+                    
+                    <!-- 基础设置 Tab -->
+                    <div class="tab-content active" id="tab-basic">
+                        <div class="control-group">
+                            <h3>形状</h3>
+                            <div class="shape-selector">
+                                <button data-shape="sphere" class="active">球体</button>
+                                <button data-shape="heart">心形</button>
+                                <button data-shape="torus">圆环</button>
+                            </div>
+                        </div>
+                        
+                        <div class="control-group">
+                            <h3>颜色</h3>
+                            <div class="color-picker-wrapper">
+                                <input type="color" id="color-picker" value="#222222">
+                            </div>
+                            <div class="opacity-control">
+                                <label>透明度: <span id="opacity-value">80</span>%</label>
+                                <input type="range" id="opacity-slider" min="0" max="100" step="1" value="80">
+                            </div>
+                        </div>
+                        
+                        <div class="control-group">
+                            <h3>粒子数量</h3>
+                            <div class="particle-count-control">
+                                <label>数量: <span id="particle-count-value">5000</span></label>
+                                <input type="range" id="particle-count-slider" min="1000" max="10000" step="500" value="5000">
+                            </div>
+                        </div>
                     </div>
-                    <div class="opacity-control">
-                        <label>透明度: <span id="opacity-value">80</span>%</label>
-                        <input type="range" id="opacity-slider" min="0" max="100" step="1" value="80">
-                    </div>
-                </div>
-                
-                <div class="control-group">
-                    <h3>粒子数量</h3>
-                    <div class="particle-count-control">
-                        <label>数量: <span id="particle-count-value">5000</span></label>
-                        <input type="range" id="particle-count-slider" min="1000" max="10000" step="500" value="5000">
-                    </div>
-                </div>
-                
-                <div class="control-group">
-                    <h3>分布方式</h3>
-                    <div class="distribution-selector">
-                        <button data-distribution="uniform" class="active">均匀</button>
-                        <button data-distribution="random">随机</button>
-                        <button data-distribution="clustered">聚集</button>
-                    </div>
-                </div>
-                
-                <div class="control-group">
-                    <h3>控制模式</h3>
-                    <div class="mode-selector">
-                        <button data-mode="normal" class="active">普通</button>
-                        <button data-mode="controlled">第三视角</button>
-                        <button data-mode="boids">生物群落</button>
-                    </div>
-                </div>
+                    
+                    <!-- 高级设置 Tab -->
+                    <div class="tab-content" id="tab-advanced">
+                        <div class="control-group">
+                            <h3>分布方式</h3>
+                            <div class="distribution-selector">
+                                <button data-distribution="uniform" class="active">均匀</button>
+                                <button data-distribution="random">随机</button>
+                                <button data-distribution="clustered">聚集</button>
+                            </div>
+                        </div>
+                        
+                        <div class="control-group">
+                            <h3>控制模式</h3>
+                            <div class="mode-selector">
+                                <button data-mode="normal" class="active">普通</button>
+                                <button data-mode="boids">生物群落</button>
+                            </div>
+                        </div>
 
-                <div class="control-group">
-                    <h3>自定义模型</h3>
-                    <div class="file-input-wrapper">
-                        <label for="model-upload" class="custom-file-upload">
-                            上传 .glb
-                        </label>
-                        <input type="file" id="model-upload" accept=".glb,.gltf">
+                        <div class="control-group">
+                            <h3>自定义模型</h3>
+                            <div class="file-input-wrapper">
+                                <label for="model-upload" class="custom-file-upload">
+                                    上传 .glb
+                                </label>
+                                <input type="file" id="model-upload" accept=".glb,.gltf">
+                            </div>
+                        </div>
                     </div>
-                </div>
+                    
+                    <!-- 手势控制 Tab -->
+                    <div class="tab-content" id="tab-gesture">
+                        <div class="control-group">
+                            <button id="camera-toggle-btn" class="camera-btn">
+                                <span class="camera-text">启用摄像头</span>
+                            </button>
+                            <div class="camera-hint">
+                                若无法唤起摄像头：在浏览器地址栏允许权限；系统设置中为浏览器开启摄像头；手机端需在设置里为浏览器或微信等容器授予摄像头权限。
+                            </div>
+                        </div>
 
-                <div class="control-group">
-                    <button id="camera-toggle-btn" class="camera-btn">
-                        <span class="camera-text">启用摄像头</span>
-                    </button>
-                    <div class="camera-hint">
-                        若无法唤起摄像头：在浏览器地址栏允许权限；系统设置中为浏览器开启摄像头；手机端需在设置里为浏览器或微信等容器授予摄像头权限。
+                        <div class="control-group">
+                            <h3>手势控制</h3>
+                            <div class="gesture-controls">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="gesture-rotation" checked>
+                                    <span>旋转控制</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="gesture-scale" checked>
+                                    <span>缩放控制</span>
+                                </label>
+                            </div>
+                        </div>
                     </div>
-                </div>
-
-                <div class="control-group">
-                    <h3>手势控制</h3>
-                    <div class="gesture-controls">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="gesture-rotation" checked>
-                            <span>旋转控制</span>
-                        </label>
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="gesture-scale" checked>
-                            <span>缩放控制</span>
-                        </label>
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="gesture-shape" checked>
-                            <span>形状切换</span>
-                        </label>
+                    
+                    <!-- 系统功能 Tab -->
+                    <div class="tab-content" id="tab-system">
+                        <div class="control-group">
+                            <h3>预设模式</h3>
+                            <div class="preset-controls">
+                                <button id="save-preset-btn" class="preset-btn">保存配置</button>
+                                <button id="load-preset-btn" class="preset-btn" ${this.presetService.hasSavedConfig() ? '' : 'disabled'}>加载配置</button>
+                            </div>
+                        </div>
+                        
+                        <div class="control-group button-row">
+                            <button id="calibration-btn">校准</button>
+                            <button id="tutorial-btn">教程</button>
+                            <button id="fullscreen-btn">全屏</button>
+                        </div>
                     </div>
-                </div>
-                
-                <div class="control-group">
-                    <h3>预设模式</h3>
-                    <div class="preset-controls">
-                        <button id="save-preset-btn" class="preset-btn">保存配置</button>
-                        <button id="load-preset-btn" class="preset-btn" ${this.presetService.hasSavedConfig() ? '' : 'disabled'}>加载配置</button>
-                    </div>
-                </div>
-                
-                <div class="control-group button-row">
-                    <button id="calibration-btn">校准</button>
-                    <button id="tutorial-btn">教程</button>
-                    <button id="fullscreen-btn">全屏</button>
                 </div>
             </div>
         `;
@@ -418,20 +434,40 @@ export class UIManager {
             console.warn('[UIManager] Mode selector buttons not found!');
         }
         
+        // Tab切换功能
+        const tabButtons = this.container.querySelectorAll('.tab-btn');
+        const tabContents = this.container.querySelectorAll('.tab-content');
+        
+        tabButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetTab = btn.dataset.tab;
+                
+                // 移除所有active类
+                tabButtons.forEach(b => b.classList.remove('active'));
+                tabContents.forEach(c => c.classList.remove('active'));
+                
+                // 添加active类到当前tab
+                btn.classList.add('active');
+                const targetContent = this.container.querySelector(`#tab-${targetTab}`);
+                if (targetContent) {
+                    targetContent.classList.add('active');
+                }
+            });
+        });
+        
         // Gesture Control Checkboxes
         const gestureCheckboxes = {
             rotation: this.container.querySelector('#gesture-rotation'),
-            scale: this.container.querySelector('#gesture-scale'),
-            shape: this.container.querySelector('#gesture-shape')
+            scale: this.container.querySelector('#gesture-scale')
         };
         
         // Load saved gesture states
         const gestureStates = this.gestureControlService.getAllGestures();
         Object.keys(gestureCheckboxes).forEach(key => {
             if (gestureCheckboxes[key]) {
-                gestureCheckboxes[key].checked = gestureStates[key];
+                gestureCheckboxes[key].checked = gestureStates[key] !== false;
                 gestureCheckboxes[key].addEventListener('change', (e) => {
-                    this.gestureControlService.setGestureEnabled(key, e.target.checked);
+                    this.gestureControlService.setGesture(key, e.target.checked);
                 });
             }
         });
