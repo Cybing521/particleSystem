@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { ParticleControlMode } from './ParticleControlMode.js';
+import { TextParticleGenerator } from '../utils/TextParticleGenerator.js';
+import { CanvasTextParticleGenerator } from '../utils/CanvasTextParticleGenerator.js';
+import { ChineseCharacterStrokes } from '../utils/ChineseCharacterStrokes.js';
+import { TextParticleEffect } from '../effects/TextParticleEffect.js';
 
 /**
  * 粒子系统类
@@ -39,6 +43,15 @@ export class ParticleSystem {
         this.currentShape = 'sphere'; // Track current shape for UI sync
         this.shapeChangeCallback = null;
         
+        // Text input mode tracking
+        this.textInputMode = false; // 文本输入模式状态
+        this.textInputModeCallback = null; // 文本输入模式切换回调
+        
+        // Gesture state tracking for shape switching
+        this.fingerCountHistory = []; // Track finger count changes (for 5→0→5 detection)
+        this.handMovementDirection = new THREE.Vector3(0, 0, 0); // Hand movement direction for 5-finger drag
+        this.lastHandPosition = { x: 0.5, y: 0.5 }; // Last hand position for movement calculation
+        
         // Color and opacity
         this.baseOpacity = 0.8; // Base opacity (0.0 to 1.0)
         
@@ -54,7 +67,7 @@ export class ParticleSystem {
         
         // Diffusion parameters
         this.diffusionSpeed = 0.02; // Base speed of particle movement
-        this.attractionStrength = 0.001; // Strength of attraction to target shape
+        this.attractionStrength = 0.003; // Strength of attraction to target shape (提升3倍以加快转换速度)
         this.randomness = 0.005; // Random movement component
         
         // Physics parameters
@@ -80,6 +93,18 @@ export class ParticleSystem {
         this.velocityPool = null;
         this.colorPool = null;
         this.maxPoolSize = this.maxParticleCount;
+
+        // 文本粒子生成器
+        this.textParticleGenerator = new TextParticleGenerator();
+
+        // Canvas文本粒子生成器（支持中文）
+        this.canvasTextParticleGenerator = new CanvasTextParticleGenerator();
+
+        // 中文字符笔画数据库
+        this.chineseCharacterStrokes = ChineseCharacterStrokes;
+
+        // 文本粒子特效
+        this.textParticleEffect = null;
 
         this.init();
     }
@@ -267,6 +292,22 @@ export class ParticleSystem {
                 x += (Math.random() - 0.5) * dispersionFactor;
                 y += (Math.random() - 0.5) * dispersionFactor;
                 z += (Math.random() - 0.5) * dispersionFactor * 0.8;
+            } else if (shape === 'number1' || shape === 'number2' || shape === 'number3') {
+                // 3D数字形状
+                const number = shape === 'number1' ? 1 : (shape === 'number2' ? 2 : 3);
+                const numResult = { x: 0, y: 0, z: 0 };
+                this.calculateNumberShape(number, i, numResult, randomFactor);
+                x = numResult.x;
+                y = numResult.y;
+                z = numResult.z;
+            } else if (shape.startsWith('text:')) {
+                // 文本形状（格式：text:lxq）
+                const text = shape.substring(5); // 移除 "text:" 前缀
+                const textResult = { x: 0, y: 0, z: 0 };
+                this.calculateTextShape(text, i, textResult, randomFactor);
+                x = textResult.x;
+                y = textResult.y;
+                z = textResult.z;
             } else {
                 // Default to sphere if unknown shape
                 const r = 2 * Math.cbrt(Math.random()) * randomFactor;
@@ -282,18 +323,285 @@ export class ParticleSystem {
             array[i * 3 + 2] = z;
         }
     }
+    
+    /**
+     * 计算3D数字形状的粒子位置
+     * @param {number} number - 数字 (1, 2, 或 3)
+     * @param {number} particleIndex - 粒子索引
+     * @param {Object} result - 结果对象 {x, y, z}
+     * @param {number} randomFactor - 随机因子
+     */
+    calculateNumberShape(number, particleIndex, result, randomFactor) {
+        const scale = 1.2 * randomFactor; // 稍微增大数字尺寸
+        const thickness = 0.25; // 数字的厚度（稍微减小以更清晰）
+        const lineWidth = 0.15; // 线条宽度
+        
+        // 使用更均匀的分布方式，确保数字各部分都有足够的粒子
+        const progress = particleIndex / this.count;
+        
+        let numX = 0, numY = 0, numZ = 0;
+        
+        if (number === 1) {
+            // 数字1：一条竖线，顶部有短斜线，底部有短横线
+            if (progress < 0.05) {
+                // 顶部短斜线（左上到右上）
+                const topProgress = progress / 0.05;
+                numX = -0.3 + topProgress * 0.3; // 从 -0.3 到 0
+                numY = 1.0 + (Math.random() - 0.5) * 0.08; // 固定在顶部
+                numZ = (Math.random() - 0.5) * thickness;
+            } else if (progress < 0.85) {
+                // 主体竖线（垂直，占据大部分粒子）
+                const mainProgress = (progress - 0.05) / 0.8;
+                numX = (Math.random() - 0.5) * lineWidth; // 竖线宽度
+                numY = 0.9 - mainProgress * 1.8; // 从 0.9 到 -0.9
+                numZ = (Math.random() - 0.5) * thickness;
+            } else {
+                // 底部短横线
+                const botProgress = (progress - 0.85) / 0.15;
+                numX = -0.2 + botProgress * 0.4; // 从 -0.2 到 0.2
+                numY = -0.9 + (Math.random() - 0.5) * 0.08; // 固定在底部
+                numZ = (Math.random() - 0.5) * thickness;
+            }
+        } else if (number === 2) {
+            // 数字2：顶部向右弧线 + 中间向左下斜线 + 底部向右弧线
+            if (progress < 0.3) {
+                // 顶部弧线（向右上方弯曲，从左上到右上）
+                const topProgress = progress / 0.3;
+                // 使用更平滑的贝塞尔曲线效果
+                const t = topProgress;
+                const startX = -0.7, startY = 0.8;
+                const endX = 0.3, endY = 0.6;
+                const controlX = 0.0, controlY = 1.0; // 控制点使曲线向上弯曲
+                
+                // 二次贝塞尔曲线
+                numX = (1-t)*(1-t)*startX + 2*(1-t)*t*controlX + t*t*endX;
+                numY = (1-t)*(1-t)*startY + 2*(1-t)*t*controlY + t*t*endY;
+                numX += (Math.random() - 0.5) * lineWidth;
+                numY += (Math.random() - 0.5) * lineWidth;
+                numZ = (Math.random() - 0.5) * thickness;
+            } else if (progress < 0.6) {
+                // 中间斜线（从左下到右下，形成"2"的中间部分）
+                const midProgress = (progress - 0.3) / 0.3;
+                numX = 0.3 - midProgress * 1.2; // 从 0.3 到 -0.9
+                numY = 0.6 - midProgress * 0.8; // 从 0.6 到 -0.2
+                numX += (Math.random() - 0.5) * lineWidth;
+                numY += (Math.random() - 0.5) * lineWidth;
+                numZ = (Math.random() - 0.5) * thickness;
+            } else {
+                // 底部弧线（向右下方弯曲，从左下到右下）
+                const botProgress = (progress - 0.6) / 0.4;
+                const t = botProgress;
+                const startX = -0.9, startY = -0.2;
+                const endX = 0.2, endY = -0.8;
+                const controlX = 0.0, controlY = -0.5; // 控制点使曲线向下弯曲
+                
+                // 二次贝塞尔曲线
+                numX = (1-t)*(1-t)*startX + 2*(1-t)*t*controlX + t*t*endX;
+                numY = (1-t)*(1-t)*startY + 2*(1-t)*t*controlY + t*t*endY;
+                numX += (Math.random() - 0.5) * lineWidth;
+                numY += (Math.random() - 0.5) * lineWidth;
+                numZ = (Math.random() - 0.5) * thickness;
+            }
+        } else if (number === 3) {
+            // 数字3：标准的数字3形状
+            // 由三个部分组成：上半圆、中间横线、下半圆
+
+            const segment = Math.floor(progress * 3); // 分为3段
+            const segmentProgress = (progress * 3) % 1;
+            const t = segmentProgress;
+
+            if (segment === 0) {
+                // 上半部分：类似数字2的上半部分，但是反向的
+                // 从右上到左中
+                const startX = 0.5, startY = 0.8;
+                const endX = -0.3, endY = 0.1;
+                const controlX = 0.6, controlY = 0.4;
+
+                numX = (1-t)*(1-t)*startX + 2*(1-t)*t*controlX + t*t*endX;
+                numY = (1-t)*(1-t)*startY + 2*(1-t)*t*controlY + t*t*endY;
+
+            } else if (segment === 1) {
+                // 中间部分：横线
+                const startX = -0.3, startY = 0.1;
+                const endX = 0.5, endY = 0.1;
+
+                numX = startX + (endX - startX) * t;
+                numY = startY + (endY - startY) * t;
+
+            } else {
+                // 下半部分：从左中到右下
+                const startX = -0.3, startY = -0.1;
+                const endX = 0.5, endY = -0.8;
+                const controlX = 0.6, controlY = -0.4;
+
+                numX = (1-t)*(1-t)*startX + 2*(1-t)*t*controlX + t*t*endX;
+                numY = (1-t)*(1-t)*startY + 2*(1-t)*t*controlY + t*t*endY;
+            }
+
+            numX += (Math.random() - 0.5) * lineWidth;
+            numY += (Math.random() - 0.5) * lineWidth;
+            numZ = (Math.random() - 0.5) * thickness;
+        }
+        
+        // 添加少量随机偏移使数字更自然（减少随机性以保持清晰度）
+        numX += (Math.random() - 0.5) * 0.02;
+        numY += (Math.random() - 0.5) * 0.02;
+        numZ += (Math.random() - 0.5) * 0.015;
+        
+        // 通过修改对象属性的方式返回结果
+        result.x = numX * scale;
+        result.y = numY * scale;
+        result.z = numZ * scale;
+    }
+
+    /**
+     * 计算文本形状的粒子位置（使用优化的文本粒子生成器）
+     * @param {string} text - 要显示的文本（如 "lxq"）
+     * @param {number} particleIndex - 粒子索引
+     * @param {Object} result - 结果对象 {x, y, z}
+     * @param {number} randomFactor - 随机因子
+     */
+    calculateTextShape(text, particleIndex, result, randomFactor) {
+        const scale = 0.8 * randomFactor;
+        let position;
+
+        // 检测是否包含中文字符
+        const hasChinese = /[\u4e00-\u9fff]/.test(text);
+
+        if (hasChinese) {
+            // 使用Canvas文本生成器处理中文
+            position = this.canvasTextParticleGenerator.generateTextParticle(
+                text,
+                this.count,
+                particleIndex
+            );
+        } else {
+            // 使用原始生成器处理英文和数字
+            position = this.textParticleGenerator.generateTextParticle(
+                text,
+                this.count,
+                particleIndex
+            );
+        }
+
+        // 应用缩放和随机偏移
+        result.x = position.x * scale;
+        result.y = position.y * scale;
+        result.z = position.z * scale;
+
+        // 添加额外的随机效果以增加自然度
+        const offset = hasChinese ? 0.02 : this.textParticleGenerator.config.randomOffset;
+        result.x += (Math.random() - 0.5) * offset;
+        result.y += (Math.random() - 0.5) * offset;
+        result.z += (Math.random() - 0.5) * offset;
+    }
+    
+    /**
+     * 计算单个字母的形状
+     * @param {string} letter - 字母
+     * @param {number} progress - 在该字母内的进度 (0-1)
+     * @param {number} lineWidth - 线条宽度
+     * @param {number} thickness - 厚度
+     * @returns {Object} {x, y, z} 局部坐标
+     */
+    calculateLetterShape(letter, progress, lineWidth, thickness) {
+        let x = 0, y = 0, z = 0;
+        
+        switch(letter) {
+            case 'l':
+                // L: 竖线 + 底部横线
+                if (progress < 0.7) {
+                    const vertProgress = progress / 0.7;
+                    x = (Math.random() - 0.5) * lineWidth;
+                    y = 0.8 - vertProgress * 1.6;
+                    z = (Math.random() - 0.5) * thickness;
+                } else {
+                    const horzProgress = (progress - 0.7) / 0.3;
+                    x = -0.4 + horzProgress * 0.8;
+                    y = -0.8 + (Math.random() - 0.5) * lineWidth;
+                    z = (Math.random() - 0.5) * thickness;
+                }
+                break;
+                
+            case 'x':
+                // X: 两条交叉的对角线
+                if (progress < 0.5) {
+                    const diag1Progress = progress / 0.5;
+                    x = -0.4 + diag1Progress * 0.8;
+                    y = 0.8 - diag1Progress * 1.6;
+                    x += (Math.random() - 0.5) * lineWidth;
+                    y += (Math.random() - 0.5) * lineWidth;
+                    z = (Math.random() - 0.5) * thickness;
+                } else {
+                    const diag2Progress = (progress - 0.5) / 0.5;
+                    x = 0.4 - diag2Progress * 0.8;
+                    y = 0.8 - diag2Progress * 1.6;
+                    x += (Math.random() - 0.5) * lineWidth;
+                    y += (Math.random() - 0.5) * lineWidth;
+                    z = (Math.random() - 0.5) * thickness;
+                }
+                break;
+                
+            case 'q':
+                // Q: 圆形 + 右下角斜线
+                if (progress < 0.85) {
+                    const circleProgress = progress / 0.85;
+                    const angle = circleProgress * Math.PI * 2;
+                    const radius = 0.4;
+                    x = Math.cos(angle) * radius;
+                    y = Math.sin(angle) * radius;
+                    x += (Math.random() - 0.5) * lineWidth;
+                    y += (Math.random() - 0.5) * lineWidth;
+                    z = (Math.random() - 0.5) * thickness;
+                } else {
+                    const lineProgress = (progress - 0.85) / 0.15;
+                    x = 0.3 + lineProgress * 0.3;
+                    y = -0.3 - lineProgress * 0.3;
+                    x += (Math.random() - 0.5) * lineWidth;
+                    y += (Math.random() - 0.5) * lineWidth;
+                    z = (Math.random() - 0.5) * thickness;
+                }
+                break;
+                
+            default:
+                // 未知字母，使用默认形状
+                x = (Math.random() - 0.5) * 0.2;
+                y = (Math.random() - 0.5) * 0.2;
+                z = (Math.random() - 0.5) * thickness;
+        }
+        
+        // 添加少量随机偏移
+        x += (Math.random() - 0.5) * 0.02;
+        y += (Math.random() - 0.5) * 0.02;
+        z += (Math.random() - 0.5) * 0.015;
+        
+        return { x, y, z };
+    }
 
     setShape(shape) {
         // Only update if shape actually changed
         if (shape !== this.currentShape) {
             this.currentShape = shape;
             this.calculateShapePositions(shape, this.targetPositions);
-            
+
+            // 如果是文本形状，初始化特效系统
+            if (shape.startsWith('text:') && !this.textParticleEffect) {
+                this.textParticleEffect = new TextParticleEffect(this);
+            } else if (!shape.startsWith('text:') && this.textParticleEffect) {
+                this.textParticleEffect = null;
+            }
+
+            // 如果是文本形状，创建出现动画
+            if (shape.startsWith('text:') && this.textParticleEffect) {
+                const text = shape.substring(5);
+                this.textParticleEffect.createTextAppearAnimation(text, 1500);
+            }
+
             // Notify callback if shape changed
             if (this.shapeChangeCallback) {
                 this.shapeChangeCallback(shape);
             }
-            
+
             // Add some initial velocity boost when shape changes for more dynamic effect
             for (let i = 0; i < this.count; i++) {
                 const idx = i * 3;
@@ -305,12 +613,99 @@ export class ParticleSystem {
         }
     }
     
+    /**
+     * 循环切换形状（用于五根手指关闭再打开的手势）
+     * 只在基础形状之间切换，不包括数字形状
+     */
+    cycleShape() {
+        const shapes = ['sphere', 'heart', 'torus'];
+        // 如果当前是数字形状，切换到第一个基础形状
+        if (this.currentShape.startsWith('number')) {
+            this.setShape('sphere');
+        } else {
+            const currentIndex = shapes.indexOf(this.currentShape);
+            const nextIndex = (currentIndex + 1) % shapes.length;
+            this.setShape(shapes[nextIndex]);
+        }
+    }
+    
     setShapeChangeCallback(callback) {
         this.shapeChangeCallback = callback;
     }
     
     getCurrentShape() {
         return this.currentShape;
+    }
+    
+    /**
+     * 设置文本输入模式
+     * @param {boolean} enabled - 是否启用文本输入模式
+     */
+    setTextInputMode(enabled) {
+        if (this.textInputMode !== enabled) {
+            this.textInputMode = enabled;
+            // 通知回调
+            if (this.textInputModeCallback) {
+                this.textInputModeCallback(enabled);
+            }
+        }
+    }
+    
+    /**
+     * 获取文本输入模式状态
+     * @returns {boolean} 是否处于文本输入模式
+     */
+    getTextInputMode() {
+        return this.textInputMode;
+    }
+    
+    /**
+     * 设置文本输入模式切换回调
+     * @param {Function} callback - 回调函数，接收 (enabled) 参数
+     */
+    setTextInputModeCallback(callback) {
+        this.textInputModeCallback = callback;
+    }
+
+    /**
+     * 设置文本特效
+     * @param {string} effectName - 特效名称 ('wave', 'glow', 'dissolve', 'rotate', 'pulse')
+     * @param {boolean} enabled - 是否启用
+     * @param {Object} params - 特效参数
+     */
+    setTextEffect(effectName, enabled, params = {}) {
+        if (this.textParticleEffect) {
+            this.textParticleEffect.setEffect(effectName, enabled, params);
+        }
+    }
+
+    /**
+     * 启用所有文本特效
+     */
+    enableAllTextEffects() {
+        if (this.textParticleEffect) {
+            this.textParticleEffect.enableAllEffects();
+        }
+    }
+
+    /**
+     * 禁用所有文本特效
+     */
+    disableAllTextEffects() {
+        if (this.textParticleEffect) {
+            this.textParticleEffect.disableAllEffects();
+        }
+    }
+
+    /**
+     * 创建文本闪烁效果
+     * @param {number} count - 闪烁次数
+     * @param {number} interval - 闪烁间隔（毫秒）
+     */
+    createTextBlinkEffect(count = 3, interval = 500) {
+        if (this.textParticleEffect) {
+            this.textParticleEffect.createTextBlinkEffect(count, interval);
+        }
     }
 
     setColor(hexColor, opacity = null) {
@@ -441,7 +836,7 @@ export class ParticleSystem {
         });
     }
 
-    update(time, leftHand = null, rightHand = null, gestureState = 1.0, fingers = 0, handPos = { x: 0.5, y: 0.5 }, rotationZ = 0.0, rotationX = 0.0) {
+    update(time, leftHand = null, rightHand = null) {
         if (this.particles) {
             // 内存优化：性能监控和自适应粒子数量调整
             const currentTime = performance.now();
@@ -462,6 +857,132 @@ export class ParticleSystem {
                 this.frameCounter = 0;
             }
             
+            // 手势控制：检测五根手指关闭再打开切换形状
+            const currentHand = rightHand || leftHand;
+            const currentFingers = currentHand ? currentHand.fingers : 0;
+            
+            // 跟踪手指数量变化历史（用于检测关闭再打开）
+            this.fingerCountHistory.push(currentFingers);
+            if (this.fingerCountHistory.length > 30) { // 保留最近30帧
+                this.fingerCountHistory.shift();
+            }
+            
+            // 检测从5指→0指→5指的模式（关闭再打开）
+            if (this.fingerCountHistory.length >= 20) {
+                const recent = this.fingerCountHistory.slice(-20);
+                // 检查是否有5→0→5的模式
+                let found5 = false, found0 = false, found5Again = false;
+                for (let i = 0; i < recent.length; i++) {
+                    if (recent[i] === 5 && !found5) {
+                        found5 = true;
+                    } else if (found5 && recent[i] === 0 && !found0) {
+                        found0 = true;
+                    } else if (found0 && recent[i] === 5 && !found5Again) {
+                        found5Again = true;
+                        // 检测到关闭再打开
+                        if (this.textInputMode) {
+                            // 如果处于文本输入模式，切换文本输入模式（关闭）
+                            this.setTextInputMode(false);
+                        } else {
+                            // 否则切换形状（保持原有功能）
+                            this.cycleShape();
+                        }
+                        // 清空历史避免重复触发
+                        this.fingerCountHistory = [];
+                        break;
+                    }
+                }
+            }
+            
+            // 手势1,2,3显示3D数字（只在右手检测到时触发，且形状手势启用时）
+            // 使用更稳定的检测算法：需要连续多帧确认才切换
+            if (rightHand && (!this.gestureControlService || this.gestureControlService.isGestureEnabled('shape'))) {
+                const rightFingers = rightHand.fingers;
+                
+                // 跟踪数字手势历史，需要连续确认才切换
+                if (!this.numberGestureHistory) {
+                    this.numberGestureHistory = [];
+                }
+                this.numberGestureHistory.push(rightFingers);
+                if (this.numberGestureHistory.length > 15) {
+                    this.numberGestureHistory.shift();
+                }
+                
+                // 检查最近15帧中是否有稳定的数字手势（至少12帧一致）
+                if (this.numberGestureHistory.length >= 15) {
+                    const recent = this.numberGestureHistory.slice(-15);
+                    const fingerCounts = {};
+                    recent.forEach(count => {
+                        fingerCounts[count] = (fingerCounts[count] || 0) + 1;
+                    });
+                    
+                    // 找到出现次数最多的手指数量（至少12次）
+                    let stableFingers = null;
+                    let maxCount = 0;
+                    for (const [count, occurrences] of Object.entries(fingerCounts)) {
+                        if (occurrences >= 12 && occurrences > maxCount) {
+                            maxCount = occurrences;
+                            stableFingers = parseInt(count);
+                        }
+                    }
+                    
+                    // 只有在检测到稳定的1、2、3指手势时才切换
+                    if (stableFingers === 1 && this.currentShape !== 'number1') {
+                        this.setShape('number1');
+                        this.numberGestureHistory = []; // 清空历史避免重复触发
+                    } else if (stableFingers === 2 && this.currentShape !== 'number2') {
+                        this.setShape('number2');
+                        this.numberGestureHistory = []; // 清空历史避免重复触发
+                    } else if (stableFingers === 3 && this.currentShape !== 'number3') {
+                        this.setShape('number3');
+                        this.numberGestureHistory = []; // 清空历史避免重复触发
+                    }
+                }
+            } else {
+                // 没有右手或手势禁用时，清空历史
+                if (this.numberGestureHistory) {
+                    this.numberGestureHistory = [];
+                }
+            }
+            
+            // 五根手指张开时移动控制粒子方向（使用右手，如果右手不存在则使用左手）
+            // 实现上下左右移动控制
+            const moveHand = rightHand || leftHand;
+            if (moveHand && moveHand.fingers === 5) {
+                // 初始化最后位置（如果还没有设置）
+                if (this.lastHandPosition.x === 0.5 && this.lastHandPosition.y === 0.5 && 
+                    (moveHand.position.x !== 0.5 || moveHand.position.y !== 0.5)) {
+                    this.lastHandPosition.x = moveHand.position.x;
+                    this.lastHandPosition.y = moveHand.position.y;
+                }
+                
+                // 计算手部移动方向（每帧都计算，确保实时响应）
+                const dx = moveHand.position.x - this.lastHandPosition.x;
+                const dy = moveHand.position.y - this.lastHandPosition.y;
+                
+                // 检查是否有明显移动（降低阈值以提高灵敏度）
+                const moveThreshold = 0.0003; // 进一步降低阈值，提高灵敏度
+                if (Math.abs(dx) > moveThreshold || Math.abs(dy) > moveThreshold) {
+                    // 更新移动方向向量（映射到3D空间）
+                    // 使用更大的缩放系数，使移动效果更明显
+                    const movementScale = 100; // 增加移动效果灵敏度
+                    this.handMovementDirection.set(
+                        dx * movementScale, // X轴：左右移动（正数向右，负数向左）
+                        -dy * movementScale, // Y轴：上下移动（反转Y轴，正数向上，负数向下）
+                        0 // Z轴：暂时不控制深度移动
+                    );
+                } else {
+                    // 移动太小，逐渐衰减（减慢衰减速度以保持移动惯性）
+                    this.handMovementDirection.multiplyScalar(0.9); // 减慢衰减，保持移动惯性
+                }
+                
+                // 更新最后位置（每帧都更新，确保连续移动检测）
+                this.lastHandPosition.x = moveHand.position.x;
+                this.lastHandPosition.y = moveHand.position.y;
+            } else {
+                // 手指不是5根时，快速衰减移动方向
+                this.handMovementDirection.multiplyScalar(0.5); // 加快衰减速度
+            }
             
             // 更新控制目标（用于boids模式）
             if (this.currentMode === 'boids') {
@@ -471,26 +992,20 @@ export class ParticleSystem {
                 }
                 
                 // 将手势位置映射到3D空间
-                let targetX, targetY, targetZ;
-                
                 if (leftHand) {
                     // 使用左手位置控制目标
-                    targetX = (leftHand.position.x - 0.5) * 5;
-                    targetY = (0.5 - leftHand.position.y) * 5; // 反转Y轴
-                    targetZ = 0;
+                    const targetX = (leftHand.position.x - 0.5) * 5;
+                    const targetY = (0.5 - leftHand.position.y) * 5; // 反转Y轴
+                    const targetZ = 0;
+                    this.controlMode.setControlTarget(new THREE.Vector3(targetX, targetY, targetZ));
                 } else if (rightHand) {
                     // 使用右手位置控制目标
-                    targetX = (rightHand.position.x - 0.5) * 5;
-                    targetY = (0.5 - rightHand.position.y) * 5;
-                    targetZ = 0;
-                } else {
-                    // 默认位置
-                    targetX = (handPos.x - 0.5) * 5;
-                    targetY = (0.5 - handPos.y) * 5;
-                    targetZ = 0;
+                    const targetX = (rightHand.position.x - 0.5) * 5;
+                    const targetY = (0.5 - rightHand.position.y) * 5;
+                    const targetZ = 0;
+                    this.controlMode.setControlTarget(new THREE.Vector3(targetX, targetY, targetZ));
                 }
-                
-                this.controlMode.setControlTarget(new THREE.Vector3(targetX, targetY, targetZ));
+                // 无手检测时，保持当前目标位置（不更新目标，让粒子继续跟随之前的目标）
             }
             
             // Dual hand control: Left hand controls position and rotation, Right hand controls scale
@@ -519,11 +1034,11 @@ export class ParticleSystem {
                 targetRotZ = this.particles.rotation.z;
                 targetScale = 0.3 + (rightHand.gestureState * 2.7); // 0.3 to 3.0
             } else {
-                // No hands or legacy single hand mode
-                targetRotY = (handPos.x - 0.5) * Math.PI * 1.5;
-                targetRotX = (handPos.y - 0.5) * Math.PI * 1.5;
-                targetRotZ = rotationZ * Math.PI;
-                targetScale = 0.3 + (gestureState * 2.7); // 0.3 to 3.0
+                // No hands detected - maintain current rotation and scale
+                targetRotY = this.particles.rotation.y;
+                targetRotX = this.particles.rotation.x;
+                targetRotZ = this.particles.rotation.z;
+                targetScale = this.particles.scale.x;
             }
 
             // Smooth rotation (降低灵敏度：从0.1/0.12降到0.06/0.08)
@@ -534,8 +1049,8 @@ export class ParticleSystem {
                 this.particles.rotation.z += (targetRotZ - this.particles.rotation.z) * 0.08;
             }
 
-            // Auto rotation if no hand
-            if (!leftHand && !rightHand && gestureState > 0.95 && fingers === 0) {
+            // Auto rotation if no hand detected
+            if (!leftHand && !rightHand) {
                 this.particles.rotation.y += 0.002;
             }
 
@@ -609,9 +1124,24 @@ export class ParticleSystem {
                 const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
                 
                 // Attraction force towards target shape
-                const attractionX = dist > 0 ? (dx / dist) * this.attractionStrength : 0;
-                const attractionY = dist > 0 ? (dy / dist) * this.attractionStrength : 0;
-                const attractionZ = dist > 0 ? (dz / dist) * this.attractionStrength : 0;
+                let attractionX = dist > 0 ? (dx / dist) * this.attractionStrength : 0;
+                let attractionY = dist > 0 ? (dy / dist) * this.attractionStrength : 0;
+                let attractionZ = dist > 0 ? (dz / dist) * this.attractionStrength : 0;
+                
+                // 五根手指张开时，添加手部移动方向的力（实现上下左右移动）
+                const movementMagnitude = this.handMovementDirection.length();
+                if (movementMagnitude > 0.001) {
+                    // 使用更大的移动强度，直接添加到速度
+                    // 确保上下左右移动都能正确控制粒子
+                    const movementStrength = 0.15; // 增加移动强度，使效果更明显
+                    
+                    // 直接修改速度，使移动更明显
+                    // X轴：左右移动（dx为正向右，为负向左）
+                    // Y轴：上下移动（dy为正向上，为负向下，已反转）
+                    this.velocities[idx] += this.handMovementDirection.x * movementStrength;
+                    this.velocities[idx + 1] += this.handMovementDirection.y * movementStrength;
+                    this.velocities[idx + 2] += this.handMovementDirection.z * movementStrength;
+                }
                 
                 // Gravity effect (downward force)
                 const gravityForce = this.gravity * this.masses[i];
@@ -679,9 +1209,16 @@ export class ParticleSystem {
             
             this.geometry.attributes.color.needsUpdate = true;
             this.geometry.attributes.position.needsUpdate = true;
-            
+
             // 使用固定大小，移除动态大小变化以避免闪烁
             this.material.size = this.baseSize;
+
+            // 更新文本特效
+            if (this.textParticleEffect && this.currentShape.startsWith('text:')) {
+                this.textParticleEffect.update(time);
+                this.geometry.attributes.color.needsUpdate = true;
+                this.geometry.attributes.position.needsUpdate = true;
+            }
 
             // Gesture Interaction: Scale (降低灵敏度：从0.15降到0.08)
             // Check if scale gesture is enabled

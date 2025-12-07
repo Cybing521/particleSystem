@@ -3,9 +3,7 @@
  * 管理手势的启用/禁用状态
  */
 export class GestureControlService {
-    constructor(handTracker) {
-        this.handTracker = handTracker;
-        
+    constructor() {
         // 手势禁用状态（true = 禁用，false = 启用）
         this.disabledGestures = {
             rotation: false,      // 旋转控制（包括位置控制的旋转）

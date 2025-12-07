@@ -25,7 +25,7 @@ export class UIManager {
         // Initialize services
         this.calibrationService = new GestureCalibrationService(handTracker);
         this.tutorialService = new TutorialService(handTracker, particleSystem);
-        this.gestureControlService = new GestureControlService(handTracker);
+        this.gestureControlService = new GestureControlService();
         this.presetService = new PresetService();
         
         // Load saved calibration
@@ -87,6 +87,20 @@ export class UIManager {
                             <div class="particle-count-control">
                                 <label>数量: <span id="particle-count-value">5000</span></label>
                                 <input type="range" id="particle-count-slider" min="1000" max="10000" step="500" value="5000">
+                            </div>
+                        </div>
+                        
+                        <div class="control-group">
+                            <h3>文本形状</h3>
+                            <div class="text-shape-control">
+                                <div class="text-input-wrapper">
+                                    <input type="text" id="text-shape-input" placeholder="输入文本（如：你好 或 hello）" maxlength="20">
+                                    <button id="text-shape-apply-btn" class="text-apply-btn">应用</button>
+                                </div>
+                                <div class="text-mode-indicator">
+                                    <span id="text-mode-status">文本模式: 关闭</span>
+                                    <span class="text-mode-hint">（五指张开→收回→张开切换）</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -399,6 +413,45 @@ export class UIManager {
         particleCountSlider.value = currentCount;
         particleCountValue.textContent = currentCount;
         
+        // Text Shape Input
+        const textShapeInput = this.container.querySelector('#text-shape-input');
+        const textShapeApplyBtn = this.container.querySelector('#text-shape-apply-btn');
+        const textModeStatus = this.container.querySelector('#text-mode-status');
+        
+        // 文本输入模式状态
+        this.textInputMode = false;
+        
+        // 更新文本模式状态显示
+        this.updateTextModeStatus = (enabled) => {
+            this.textInputMode = enabled;
+            if (textModeStatus) {
+                textModeStatus.textContent = `文本模式: ${enabled ? '开启' : '关闭'}`;
+                textModeStatus.style.color = enabled ? '#4CAF50' : '#999';
+            }
+        };
+        
+        // 初始化状态（从粒子系统读取）
+        const currentTextMode = this.particleSystem.getTextInputMode ? this.particleSystem.getTextInputMode() : false;
+        this.updateTextModeStatus(currentTextMode);
+        
+        // 应用文本形状
+        const applyTextShape = () => {
+            const text = textShapeInput.value.trim();
+            if (text) {
+                this.particleSystem.setShape(`text:${text}`);
+                // 应用文本形状后，自动开启文本输入模式
+                this.particleSystem.setTextInputMode(true);
+                this.showNotification(`已应用文本形状: ${text}`, 'success');
+            }
+        };
+        
+        textShapeApplyBtn.addEventListener('click', applyTextShape);
+        textShapeInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                applyTextShape();
+            }
+        });
+        
         // Distribution Mode Selector
         const distributionButtons = this.container.querySelectorAll('.distribution-selector button');
         distributionButtons.forEach(btn => {
@@ -467,7 +520,7 @@ export class UIManager {
             if (gestureCheckboxes[key]) {
                 gestureCheckboxes[key].checked = gestureStates[key] !== false;
                 gestureCheckboxes[key].addEventListener('change', (e) => {
-                    this.gestureControlService.setGesture(key, e.target.checked);
+                    this.gestureControlService.setGestureEnabled(key, e.target.checked);
                 });
             }
         });
@@ -1004,6 +1057,11 @@ export class UIManager {
     updateShapeSelection(shape) {
         const buttons = this.container.querySelectorAll('.shape-selector button');
         buttons.forEach(btn => {
+            // 数字形状不在UI中显示，只同步基础形状
+            if (shape.startsWith('number')) {
+                // 数字形状时，不更新UI按钮状态
+                return;
+            }
             if (btn.dataset.shape === shape) {
                 btn.classList.add('active');
             } else {

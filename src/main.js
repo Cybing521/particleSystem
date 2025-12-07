@@ -77,23 +77,23 @@ particleSystem.setGestureControlService(uiManager.gestureControlService);
 const dataVisualization = new DataVisualization(handTracker, particleSystem);
 
 // Set up callbacks for UI synchronization
-handTracker.setFingerChangeCallback((fingers) => {
-    // When finger count changes, update shape if needed
-    // Check if shape gesture is enabled before switching
-    if (uiManager.gestureControlService.isGestureEnabled('shape')) {
-        if (fingers === 1) {
-            particleSystem.setShape('sphere');
-        } else if (fingers === 2) {
-            particleSystem.setShape('heart');
-        } else if (fingers === 3) {
-            particleSystem.setShape('torus');
-        }
-    }
-});
+// Note: Gesture 1,2,3 shape switching is handled in ParticleSystem.update()
+// This callback is kept for potential future use but currently disabled to avoid conflicts
+// handTracker.setFingerChangeCallback((fingers) => {
+//     // This logic conflicts with ParticleSystem's number1/number2/number3 gesture handling
+// });
 
 particleSystem.setShapeChangeCallback((shape) => {
     // When shape changes, update UI
     uiManager.updateShapeSelection(shape);
+});
+
+// Set text input mode callback
+particleSystem.setTextInputModeCallback((enabled) => {
+    // When text input mode changes, update UI
+    if (uiManager.updateTextModeStatus) {
+        uiManager.updateTextModeStatus(enabled);
+    }
 });
 
 // Resize Handler
@@ -127,7 +127,6 @@ if (isMobile) {
 
 // Animation Loop
 const clock = new THREE.Clock();
-let frameCount = 0;
 
 function animate() {
   requestAnimationFrame(animate);
@@ -137,50 +136,40 @@ function animate() {
   // Get gesture data through service (模块化)
   const gestureData = gestureService.getGestureData();
   
-  let leftHand, rightHand, gestureState, fingers, position, rotationZ, rotationX;
+  let leftHand, rightHand;
   
   if (!gestureData) {
     // Fallback to direct handTracker access if service unavailable
     leftHand = handTracker.getLeftHand();
     rightHand = handTracker.getRightHand();
-    gestureState = handTracker.getGestureState();
-    fingers = handTracker.getFingers();
-    position = handTracker.getPosition();
-    rotationZ = handTracker.getRotationZ();
-    rotationX = handTracker.getRotationX();
   } else {
     // Use service data
     leftHand = gestureData.leftHand;
     rightHand = gestureData.rightHand;
-    gestureState = gestureData.gestureState;
-    fingers = gestureData.fingers;
-    position = gestureData.position;
-    rotationZ = gestureData.rotationZ;
-    rotationX = gestureData.rotationX;
   }
 
-  // Debug: Log gesture data periodically
-  frameCount++;
-  if (frameCount % 60 === 0) { // Every 60 frames (~1 second at 60fps)
-    console.log('[Main] Dual hand data to ParticleSystem:', {
-      leftHand: {
-        position: { x: leftHand.position.x.toFixed(2), y: leftHand.position.y.toFixed(2) },
-        rotationZ: leftHand.rotationZ.toFixed(2),
-        rotationX: leftHand.rotationX.toFixed(2)
-      },
-      rightHand: {
-        gestureState: rightHand.gestureState.toFixed(2),
-        fingers: rightHand.fingers
-      },
-      isTracking: handTracker.isCameraEnabled()
-    });
-  }
+  // Debug: Log gesture data periodically (disabled in production)
+  // Uncomment for debugging:
+  // frameCount++;
+  // if (frameCount % 60 === 0) {
+  //   console.log('[Main] Dual hand data to ParticleSystem:', {
+  //     leftHand: {
+  //       position: { x: leftHand.position.x.toFixed(2), y: leftHand.position.y.toFixed(2) },
+  //       rotationZ: leftHand.rotationZ.toFixed(2),
+  //       rotationX: leftHand.rotationX.toFixed(2)
+  //     },
+  //     rightHand: {
+  //       gestureState: rightHand.gestureState.toFixed(2),
+  //       fingers: rightHand.fingers
+  //     },
+  //     isTracking: handTracker.isCameraEnabled()
+  //   });
+  // }
 
   // Pass dual hand data to particle system
-  particleSystem.update(elapsedTime, leftHand, rightHand, gestureState, fingers, position, rotationZ, rotationX);
+  particleSystem.update(elapsedTime, leftHand, rightHand);
 
   renderer.render(scene, camera);
 }
 
-console.log('[Main] Starting animation loop...');
 animate();

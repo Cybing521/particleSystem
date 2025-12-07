@@ -141,9 +141,10 @@ canvas {
   flex: 1;
   min-width: 60px;
   padding: 8px 12px;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
   color: #888;
   font-size: 11px;
   font-weight: 500;
@@ -152,18 +153,27 @@ canvas {
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  box-shadow: none !important;
 }
 
 .tab-btn:hover {
   color: var(--text-color);
-  background: rgba(0, 0, 0, 0.03);
+  background: transparent !important;
 }
 
 .tab-btn.active {
   color: var(--text-color);
-  border-bottom-color: var(--accent-color);
-  background: rgba(0, 0, 0, 0.02);
+  border-bottom-color: var(--accent-color) !important;
+  border-bottom-width: 2px !important;
+  border-bottom-style: solid !important;
   font-weight: 600;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .tab-content {
@@ -280,18 +290,33 @@ input[type="file"] {
 }
 
 .camera-btn {
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: center;
   gap: 8px;
   width: 100%;
-  padding: 7px 11px;
+  padding: 10px 16px;
+  border: none !important;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.05) !important;
+  box-shadow: none !important;
+  color: var(--text-color) !important;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.camera-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  transform: translateY(-2px);
 }
 
 .camera-btn.active {
   background: var(--accent-color);
   color: white;
-  border-color: var(--accent-color);
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .camera-btn.active:hover {
@@ -496,28 +521,6 @@ input[type="file"] {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-}
-
-.tab-btn {
-  padding: 12px;
-  border-radius: 14px;
-  background: #f7f7f7;
-  border: 1px solid var(--border-color);
-  box-shadow: none;
-}
-
-.tab-btn.active {
-  background: var(--accent-color);
-  color: #fff;
-  border-color: var(--accent-color);
-}
-
-.tab-content {
-  border: 1px solid var(--border-color);
-  border-radius: 16px;
-  padding: 16px;
-  background: #fff;
-  box-shadow: var(--shadow-sm);
 }
 
 .issues-panel {

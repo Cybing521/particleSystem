@@ -69,11 +69,6 @@ export class GestureService {
      * @returns {Object|null} 手势数据对象，如果未初始化则返回 null
      * @returns {Object} returns.leftHand - 左手数据
      * @returns {Object} returns.rightHand - 右手数据
-     * @returns {number} returns.gestureState - 手势状态（向后兼容）
-     * @returns {number} returns.fingers - 手指数量（向后兼容）
-     * @returns {{x: number, y: number}} returns.position - 手部位置（向后兼容）
-     * @returns {number} returns.rotationZ - 旋转值（向后兼容）
-     * @returns {number} returns.rotationX - 倾斜值（向后兼容）
      * @returns {boolean} returns.isTracking - 是否正在追踪
      */
     getGestureData() {
@@ -85,12 +80,6 @@ export class GestureService {
             return {
                 leftHand: this.handTracker.getLeftHand(),
                 rightHand: this.handTracker.getRightHand(),
-                // 向后兼容
-                gestureState: this.handTracker.getGestureState(),
-                fingers: this.handTracker.getFingers(),
-                position: this.handTracker.getPosition(),
-                rotationZ: this.handTracker.getRotationZ(),
-                rotationX: this.handTracker.getRotationX(),
                 isTracking: this.handTracker.isCameraEnabled()
             };
         } catch (error) {
